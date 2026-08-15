@@ -1,0 +1,39 @@
+{
+  "name": "room-booking",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@sendgrid/mail": "^8.1.6",
+    "axios": "^1.18.0",
+    "bcryptjs": "^3.0.3",
+    "cloudinary": "^2.10.0",
+    "heic-convert": "^2.1.0",
+    "mongoose": "^9.7.1",
+    "next": "^16.3.0",
+    "next-auth": "^4.24.14",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "react-hot-toast": "^2.6.0",
+    "react-phone-number-input": "^3.4.17",
+    "recharts": "^3.9.0",
+    "resend": "^6.14.0",
+    "sharp": "^0.35.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.9",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
