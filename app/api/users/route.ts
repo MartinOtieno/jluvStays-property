@@ -2,23 +2,13 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
-import User from "../../../models/User";
+import User from "@/models/User";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../auth/[...nextauth]/route";
 import crypto from "crypto";
 import { Resend } from "resend";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
-
-const STAFF_ROLES = [
-  "admin",
-  "property_manager",
-  "receptionist",
-  "caretaker",
-  "accountant",
-  "security",
-  "maintenance",
-];
 
 export async function GET(req: NextRequest) {
   try {
@@ -36,7 +26,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
 
     const role       = searchParams.get("role");       // single role, e.g. ?role=admin
-    const staffOnly  = searchParams.get("staff");      // ?staff=true  → all staff roles
+    const staffOnly  = searchParams.get("staff");      // ?staff=true  → role === "staff"
     const search     = searchParams.get("search");     // ?search=jane → name/email match
     const page       = Number(searchParams.get("page"))  || 1;
     const limit      = Number(searchParams.get("limit")) || 20;
@@ -45,9 +35,15 @@ export async function GET(req: NextRequest) {
     // Build filter
     const filter: Record<string, unknown> = {};
 
+    // NOTE: User.role only has 4 values — "admin", "staff", "tenant",
+    // "guest" (see models/User.ts). Granular staff positions
+    // ("property_manager", "caretaker", etc.) live on StaffProfile.position,
+    // not here — the old STAFF_ROLES list matching a list of position
+    // names against User.role never matched anything real. If you need
+    // to filter by a specific staff position, that query belongs on
+    // StaffProfile, not this route.
     if (staffOnly === "true") {
-      // Return all staff roles in one query
-      filter.role = { $in: STAFF_ROLES };
+      filter.role = "staff";
     } else if (role) {
       filter.role = role;
     }

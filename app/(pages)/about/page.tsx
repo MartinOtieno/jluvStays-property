@@ -20,6 +20,12 @@ interface PropertySettings {
   };
 }
 
+// Matches what /api/staff already returns — position + a populated user
+// (name/email/phone/photo/role). This is the shape a StaffProfile model
+// would naturally produce (a position field alongside a User ref), so
+// I'm assuming this endpoint IS backed by StaffProfile already rather
+// than switching it to a different route I haven't seen. Flag it if
+// that assumption is wrong.
 interface StaffMember {
   _id: string;
   position: string;
@@ -32,7 +38,12 @@ interface StaffMember {
   };
 }
 
-interface Stats { rooms: number; bookings: number; users: number; }
+interface UserApiShape {
+  _id: string;
+  role?: string;
+}
+
+interface Stats { rooms: number; bookings: number; tenants: number; }
 
 async function getStats(): Promise<Stats> {
   try {
@@ -44,14 +55,23 @@ async function getStats(): Promise<Stats> {
     ]);
     const rooms    = await roomsRes.json();
     const bookings = await bookingsRes.json();
-    const users    = usersRes.ok ? await usersRes.json() : { count: 0 };
+    const users     = usersRes.ok ? await usersRes.json() : { success: false };
+
+    // "Registered Tenants" means users with role === "tenant" specifically
+    // — not admins, not staff. The old version used a precomputed `count`
+    // field, which can't be filtered by role, so this now always works
+    // from the `data` array and counts matching users itself.
+    const tenantCount = users.success
+      ? (users.data as UserApiShape[]).filter((u) => u.role === "tenant").length
+      : 0;
+
     return {
       rooms:    rooms.success    ? (rooms.count    ?? rooms.data?.length    ?? 0) : 0,
       bookings: bookings.success ? (bookings.count ?? bookings.data?.length ?? 0) : 0,
-      users:    users.success    ? (users.count    ?? users.data?.length    ?? 0) : 0,
+      tenants:  tenantCount,
     };
   } catch {
-    return { rooms: 0, bookings: 0, users: 0 };
+    return { rooms: 0, bookings: 0, tenants: 0 };
   }
 }
 
@@ -134,8 +154,8 @@ export default async function AboutPage() {
               family suites — all fully furnished and ready to move into.
             </p>
             <div className="flex flex-wrap gap-4">
-              <Link href="/rooms" className="px-6 py-3 bg-[#7A1B0F] hover:opacity-90 text-white font-semibold rounded-xl transition">
-                Browse Rooms
+              <Link href="/listings" className="px-6 py-3 bg-[#7A1B0F] hover:opacity-90 text-white font-semibold rounded-xl transition">
+                Browse Listings
               </Link>
               <Link href="/contact" className="px-6 py-3 border-2 border-[#7A1B0F] text-[#7A1B0F] hover:bg-[#7A1B0F]/5 font-semibold rounded-xl transition">
                 Contact Us
@@ -148,7 +168,7 @@ export default async function AboutPage() {
             {[
               { value: stats.rooms    > 0 ? stats.rooms    + "+" : "20+",  label: "Available Rooms",    icon: "🏠", desc: "Rooms in our building"   },
               { value: stats.bookings > 0 ? stats.bookings + "+" : "50+",  label: "Total Bookings",     icon: "📅", desc: "Successful reservations"  },
-              { value: stats.users    > 0 ? stats.users    + "+" : "100+", label: "Registered Tenants", icon: "😊", desc: "Happy residents"          },
+              { value: stats.tenants  > 0 ? stats.tenants  + "+" : "100+", label: "Registered Tenants", icon: "😊", desc: "Happy residents"          },
               { value: "5★",                                                label: "Average Rating",     icon: "⭐", desc: "Based on tenant reviews"  },
             ].map((stat) => (
               <div key={stat.label} className="bg-[#7A1B0F]/5 rounded-2xl p-6 text-center hover:bg-[#7A1B0F]/10 transition">
@@ -186,7 +206,7 @@ export default async function AboutPage() {
         </section>
       )}
 
-      {/* ── House Rules */}
+      {/* ── House Rules ───────────────────────────────────────────────────────── */}
       {settings.rules.length > 0 && (
         <section className="bg-gray-50 py-16 px-4">
           <div className="max-w-4xl mx-auto">
@@ -242,7 +262,9 @@ export default async function AboutPage() {
                   </div>
                   <div className="p-5 text-center">
                     <h3 className="text-lg font-bold text-gray-900 mb-1">{member.user.name}</h3>
-                    <p className="text-[#7A1B0F] text-sm font-medium capitalize mb-3">{member.user.role}</p>
+                    <p className="text-[#7A1B0F] text-sm font-medium capitalize mb-3">
+                      {member.position || member.user.role}
+                    </p>
                     {member.user.phone && (
                       <a href={`tel:${member.user.phone}`} className="text-gray-400 text-sm hover:text-[#7A1B0F] transition">
                         {member.user.phone}
@@ -314,11 +336,11 @@ export default async function AboutPage() {
         <div className="max-w-3xl mx-auto text-center">
           <h2 className="text-3xl font-bold text-white mb-4">Ready to Move In?</h2>
           <p className="text-white/90 mb-8">
-            Browse our available rooms and find your perfect space in {city} today.
+            Browse our available listings and find your perfect space in {city} today.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/rooms" className="px-8 py-3 bg-white text-[#7A1B0F] hover:bg-gray-100 font-semibold rounded-xl transition">
-              Browse Rooms
+            <Link href="/listings" className="px-8 py-3 bg-white text-[#7A1B0F] hover:bg-gray-100 font-semibold rounded-xl transition">
+              Browse Listings
             </Link>
             <Link href="/contact" className="px-8 py-3 border-2 border-white text-white hover:bg-white/10 font-semibold rounded-xl transition">
               Get in Touch

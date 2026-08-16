@@ -181,7 +181,7 @@ const NAV_SECTIONS = [
         // Renamed from "Property Settings" — this is site/business-level
         // config (contact info, etc.), unrelated to the Unit model. Route
         // (/admin/settings) is unchanged.
-        label: "Site Settings",
+        label: "Property Settings",
         href: "/admin/settings",
         icon: <Icon.Settings />,
         allowedRoles: ["admin"] as StaffRole[],
