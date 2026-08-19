@@ -4,9 +4,12 @@ import { useSession } from "next-auth/react";
 import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { signOut } from "next-auth/react";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────────
 
 type StaffPosition =
   | "property_manager"
@@ -16,410 +19,1029 @@ type StaffPosition =
   | "security"
   | "maintenance";
 
-// ─── Icons ───────────────────────────────────────────────────────────────────
+interface StaffProfile {
+  _id: string;
+  user: string;
+  employeeNumber: string;
+  position: StaffPosition | string;
+  department?: string;
+  hireDate?: string;
+  salary?: number;
+  isActive?: boolean;
+}
+
+interface SessionUser {
+  id?: string;
+  name?: string;
+  email?: string;
+  role?: string;
+  photo?: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Staff positions
+// ─────────────────────────────────────────────────────────────────────────────
+
+const STAFF_POSITIONS: StaffPosition[] = [
+  "property_manager",
+  "receptionist",
+  "caretaker",
+  "accountant",
+  "security",
+  "maintenance",
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SVG Icons
+// ─────────────────────────────────────────────────────────────────────────────
 
 const Icon = {
   Overview: () => (
-    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+    <svg
+      width="18"
+      height="18"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={1.8}
+    >
       <rect x="3" y="3" width="7" height="7" rx="1.5" />
       <rect x="14" y="3" width="7" height="7" rx="1.5" />
       <rect x="3" y="14" width="7" height="7" rx="1.5" />
       <rect x="14" y="14" width="7" height="7" rx="1.5" />
     </svg>
   ),
-  Bookings: () => (
-    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-      <rect x="3" y="4" width="18" height="18" rx="2" />
-      <path d="M16 2v4M8 2v4M3 10h18" />
-      <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01" strokeLinecap="round" />
+
+  Units: () => (
+    <svg
+      width="18"
+      height="18"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={1.8}
+    >
+      <path d="M4 21V7l8-4 8 4v14" />
+      <path d="M9 21v-6h6v6M4 11h16" />
     </svg>
   ),
+
   Rooms: () => (
-    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+    <svg
+      width="18"
+      height="18"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={1.8}
+    >
       <path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z" />
       <path d="M9 21V12h6v9" />
     </svg>
   ),
+
+  Bookings: () => (
+    <svg
+      width="18"
+      height="18"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={1.8}
+    >
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <path d="M16 2v4M8 2v4M3 10h18" />
+      <path
+        d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"
+        strokeLinecap="round"
+      />
+    </svg>
+  ),
+
   Viewings: () => (
-    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+    <svg
+      width="18"
+      height="18"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={1.8}
+    >
       <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
       <circle cx="12" cy="12" r="3" />
     </svg>
   ),
+
   CheckIn: () => (
-    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-      <path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3" />
+    <svg
+      width="18"
+      height="18"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={1.8}
+    >
+      <path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4" />
+      <path d="M10 17l5-5-5-5M15 12H3" />
     </svg>
   ),
-  Profile: () => (
-    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 20v-1a8 8 0 0116 0v1" />
+
+  Users: () => (
+    <svg
+      width="18"
+      height="18"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={1.8}
+    >
+      <circle cx="9" cy="7" r="4" />
+      <path d="M3 21v-2a4 4 0 014-4h4a4 4 0 014 4v2" />
+      <path d="M16 3.13a4 4 0 010 7.75M21 21v-2a4 4 0 00-3-3.87" />
     </svg>
   ),
+
+  Reports: () => (
+    <svg
+      width="18"
+      height="18"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={1.8}
+    >
+      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+      <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" />
+    </svg>
+  ),
+
   Notifications: () => (
-    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+    <svg
+      width="18"
+      height="18"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={1.8}
+    >
       <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" />
       <path d="M13.73 21a2 2 0 01-3.46 0" />
     </svg>
   ),
+
   Contacts: () => (
-    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-      <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
+    <svg
+      width="18"
+      height="18"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={1.8}
+    >
+      <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
     </svg>
   ),
+
+  Profile: () => (
+    <svg
+      width="18"
+      height="18"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={1.8}
+    >
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 20v-1a8 8 0 0116 0v1" />
+    </svg>
+  ),
+
   SignOut: () => (
-    <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-      <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
+    <svg
+      width="16"
+      height="16"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={1.8}
+    >
+      <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
+      <path d="M16 17l5-5-5-5M21 12H9" />
     </svg>
   ),
+
   Menu: () => (
-    <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <svg
+      width="20"
+      height="20"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+    >
       <path d="M3 12h18M3 6h18M3 18h18" />
     </svg>
   ),
+
   Close: () => (
-    <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <svg
+      width="20"
+      height="20"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+    >
       <path d="M18 6L6 18M6 6l12 12" />
     </svg>
   ),
 };
 
-// ─── Navigation config ────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Position metadata
+// ─────────────────────────────────────────────────────────────────────────────
 
-const NAV_SECTIONS = [
+const POSITION_META: Record<
+  StaffPosition,
+  { label: string; color: string }
+> = {
+  property_manager: {
+    label: "Property Manager",
+    color: "bg-emerald-500",
+  },
+
+  receptionist: {
+    label: "Receptionist",
+    color: "bg-violet-500",
+  },
+
+  caretaker: {
+    label: "Caretaker",
+    color: "bg-amber-500",
+  },
+
+  accountant: {
+    label: "Accountant",
+    color: "bg-rose-500",
+  },
+
+  security: {
+    label: "Security",
+    color: "bg-slate-500",
+  },
+
+  maintenance: {
+    label: "Maintenance",
+    color: "bg-orange-500",
+  },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Navigation
+// ─────────────────────────────────────────────────────────────────────────────
+
+const NAV_SECTIONS: {
+  title: string;
+  items: {
+    label: string;
+    href: string;
+    icon: React.ReactNode;
+    allowedPositions: StaffPosition[];
+  }[];
+}[] = [
   {
     title: "Main",
+
     items: [
       {
         label: "Overview",
         href: "/staff",
         icon: <Icon.Overview />,
-        allowedPositions: [
-          "property_manager", "receptionist", "caretaker",
-          "accountant", "security", "maintenance",
-        ] as StaffPosition[],
+        allowedPositions: STAFF_POSITIONS,
       },
     ],
   },
+
   {
-    title: "Operations",
+    title: "Management",
+
     items: [
       {
-        label: "Bookings",
-        href: "/staff/bookings",
-        icon: <Icon.Bookings />,
-        allowedPositions: ["property_manager", "receptionist", "accountant"] as StaffPosition[],
+        label: "Units",
+        href: "/staff/units",
+        icon: <Icon.Units />,
+        allowedPositions: [
+          "property_manager",
+          "caretaker",
+        ],
       },
-      {
-        label: "Check-in / Check-out",
-        href: "/staff/checkin",
-        icon: <Icon.CheckIn />,
-        allowedPositions: ["property_manager", "receptionist"] as StaffPosition[],
-      },
+
       {
         label: "Rooms",
         href: "/staff/rooms",
         icon: <Icon.Rooms />,
-        allowedPositions: ["property_manager", "caretaker", "maintenance"] as StaffPosition[],
+        allowedPositions: [
+          "property_manager",
+          "caretaker",
+          "maintenance",
+        ],
       },
+
+      {
+        label: "Bookings",
+        href: "/staff/bookings",
+        icon: <Icon.Bookings />,
+        allowedPositions: [
+          "property_manager",
+          "receptionist",
+          "accountant",
+        ],
+      },
+
+      {
+        label: "Check-in / Check-out",
+        href: "/staff/checkin",
+        icon: <Icon.CheckIn />,
+        allowedPositions: [
+          "property_manager",
+          "receptionist",
+        ],
+      },
+
       {
         label: "Viewing Requests",
         href: "/staff/viewings",
         icon: <Icon.Viewings />,
-        allowedPositions: ["property_manager", "receptionist"] as StaffPosition[],
+        allowedPositions: [
+          "property_manager",
+          "receptionist",
+        ],
+      },
+
+      {
+        label: "Users",
+        href: "/staff/users",
+        icon: <Icon.Users />,
+        allowedPositions: [
+          "property_manager",
+          "receptionist",
+        ],
       },
     ],
   },
+
   {
-    title: "Communication",
+    title: "System",
+
     items: [
       {
-        label: "Notifications",
-        href: "/staff/notifications",
-        icon: <Icon.Notifications />,
+        label: "Reports",
+        href: "/staff/reports",
+        icon: <Icon.Reports />,
         allowedPositions: [
-          "property_manager", "receptionist", "caretaker",
-          "accountant", "security", "maintenance",
-        ] as StaffPosition[],
+          "property_manager",
+          "accountant",
+        ],
       },
+
       {
         label: "Contacts",
         href: "/staff/contacts",
         icon: <Icon.Contacts />,
         allowedPositions: [
-          "property_manager", "receptionist", "caretaker",
-          "accountant", "security", "maintenance",
-        ] as StaffPosition[],
+          "property_manager",
+          "receptionist",
+        ],
       },
-    ],
-  },
-  {
-    title: "Account",
-    items: [
+
+      {
+        label: "Notifications",
+        href: "/staff/notifications",
+        icon: <Icon.Notifications />,
+        allowedPositions: STAFF_POSITIONS,
+      },
+
       {
         label: "My Profile",
         href: "/staff/profile",
         icon: <Icon.Profile />,
-        allowedPositions: [
-          "property_manager", "receptionist", "caretaker",
-          "accountant", "security", "maintenance",
-        ] as StaffPosition[],
+        allowedPositions: STAFF_POSITIONS,
       },
     ],
   },
 ];
 
-// ─── Position display meta ────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Layout
+// ─────────────────────────────────────────────────────────────────────────────
 
-const POSITION_META: Record<StaffPosition, { label: string; color: string }> = {
-  property_manager: { label: "Property Manager", color: "bg-emerald-500" },
-  receptionist:     { label: "Receptionist",     color: "bg-violet-500"  },
-  caretaker:        { label: "Caretaker",        color: "bg-amber-500"   },
-  accountant:       { label: "Accountant",       color: "bg-rose-500"    },
-  security:         { label: "Security",         color: "bg-slate-500"   },
-  maintenance:      { label: "Maintenance",      color: "bg-orange-500"  },
-};
-
-const STAFF_POSITIONS = Object.keys(POSITION_META) as StaffPosition[];
-
-// ─── Layout ───────────────────────────────────────────────────────────────────
-
-export default function StaffLayout({ children }: { children: React.ReactNode }) {
+export default function StaffLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const { data: session, status } = useSession();
-  const router   = useRouter();
+
+  const router = useRouter();
   const pathname = usePathname();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  const [staffProfile, setStaffProfile] =
+    useState<StaffProfile | null>(null);
+
   const [pendingCounts, setPendingCounts] = useState({
     bookings: 0,
     viewings: 0,
     notifications: 0,
+    contacts: 0,
   });
-  const [mounted, setMounted] = useState(false);
 
-  useEffect(() => { setMounted(true); }, []);
+  // ─────────────────────────────────────────────────────────────────────────
+  // Mounted
+  // ─────────────────────────────────────────────────────────────────────────
 
-  const userRole = (session?.user as { role?: string })?.role ?? "";
-  const userId   = (session?.user as { id?: string })?.id ?? "";
-  const isStaff  = STAFF_POSITIONS.includes(userRole as StaffPosition);
-  const position = userRole as StaffPosition;
-  const posMeta  = POSITION_META[position] ?? POSITION_META.receptionist;
-
-  // Auth guard
   useEffect(() => {
-    if (!mounted) return;
-    if (status === "unauthenticated") { router.push("/login"); return; }
-    if (status === "authenticated" && !isStaff) {
-      router.push(userRole === "admin" ? "/admin" : "/");
+    setMounted(true);
+  }, []);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Session
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const sessionUser =
+    (session?.user as SessionUser | undefined) ?? {};
+
+  const userRole = sessionUser.role ?? "";
+  const userId = sessionUser.id ?? "";
+  const userPhoto = sessionUser.photo ?? "";
+
+  // IMPORTANT:
+  // User.role must be "staff".
+  //
+  // StaffProfile.position determines what the staff member can access.
+  const isStaff = userRole === "staff";
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Load StaffProfile
+  // ─────────────────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (
+      status !== "authenticated" ||
+      !userId ||
+      !isStaff
+    ) {
+      return;
     }
-  }, [mounted, status, isStaff, userRole, router]);
 
-  // ── Fetch pending badge counts (bookings, viewings, notifications) ────────
-  useEffect(() => {
-    if (status !== "authenticated" || !isStaff || !userId) return;
-
-    const load = async () => {
+    const loadStaffProfile = async () => {
       try {
-        const [bRes, vRes, nRes] = await Promise.all([
-          fetch("/api/bookings"),
-          fetch("/api/viewing-request"),
-          fetch(`/api/notifications?userId=${userId}&unreadOnly=true`),
-        ]);
-        const b = await bRes.json();
-        const v = await vRes.json();
-        const n = await nRes.json();
+        const response = await fetch(
+          `/api/staff/profile?userId=${encodeURIComponent(userId)}`
+        );
 
-        setPendingCounts({
-          bookings: b.success
-            ? b.data.filter((x: { status: string }) => x.status === "pending").length
-            : 0,
-          viewings: v.success
-            ? v.data.filter((x: { status: string }) => x.status === "pending").length
-            : 0,
-          notifications: n.success ? n.unreadCount : 0,
-        });
-      } catch { /* silent */ }
+        if (!response.ok) {
+          console.error(
+            "Failed to load staff profile:",
+            response.status
+          );
+          return;
+        }
+
+        const data = await response.json();
+
+        if (data.success && data.data) {
+          setStaffProfile(data.data);
+        }
+      } catch (error) {
+        console.error(
+          "Error loading staff profile:",
+          error
+        );
+      }
     };
 
-    load();
-    const iv = setInterval(load, 60_000);
-    return () => clearInterval(iv);
-  }, [status, isStaff, userId]);
+    loadStaffProfile();
+  }, [status, userId, isStaff]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Auth guard
+  // ─────────────────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!mounted) return;
+
+    if (status === "unauthenticated") {
+      router.push("/login");
+      return;
+    }
+
+    if (status === "authenticated" && !isStaff) {
+      if (userRole === "admin") {
+        router.push("/admin");
+      } else {
+        router.push("/");
+      }
+    }
+  }, [
+    mounted,
+    status,
+    isStaff,
+    userRole,
+    router,
+  ]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Fetch badge counts
+  // ─────────────────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (
+      status !== "authenticated" ||
+      !isStaff ||
+      !userId
+    ) {
+      return;
+    }
+
+    const fetchCounts = async () => {
+      try {
+        const [
+          bookingsRes,
+          viewingsRes,
+          notificationsRes,
+          contactsRes,
+        ] = await Promise.all([
+          fetch("/api/bookings"),
+          fetch("/api/viewing-request"),
+          fetch(
+            `/api/notifications?userId=${encodeURIComponent(
+              userId
+            )}&unreadOnly=true`
+          ),
+          fetch("/api/contact?status=unread"),
+        ]);
+
+        const bookings = await bookingsRes.json();
+        const viewings = await viewingsRes.json();
+        const notifications =
+          await notificationsRes.json();
+        const contacts = await contactsRes.json();
+
+        setPendingCounts({
+          bookings:
+            bookings.success &&
+            Array.isArray(bookings.data)
+              ? bookings.data.filter(
+                  (b: { status: string }) =>
+                    b.status === "pending"
+                ).length
+              : 0,
+
+          viewings:
+            viewings.success &&
+            Array.isArray(viewings.data)
+              ? viewings.data.filter(
+                  (v: { status: string }) =>
+                    v.status === "pending"
+                ).length
+              : 0,
+
+          notifications:
+            notifications.success
+              ? notifications.unreadCount ?? 0
+              : 0,
+
+          contacts:
+            contacts.success &&
+            Array.isArray(contacts.messages)
+              ? contacts.messages.length
+              : 0,
+        });
+      } catch (error) {
+        console.error(
+          "Error loading notification counts:",
+          error
+        );
+      }
+    };
+
+    fetchCounts();
+
+    const interval = setInterval(
+      fetchCounts,
+      60_000
+    );
+
+    return () => clearInterval(interval);
+  }, [
+    status,
+    isStaff,
+    userId,
+  ]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Badge map
+  // ─────────────────────────────────────────────────────────────────────────
 
   const badges: Record<string, number> = {
-    "/staff/bookings":      pendingCounts.bookings,
-    "/staff/viewings":      pendingCounts.viewings,
-    "/staff/notifications": pendingCounts.notifications,
+    "/staff/bookings":
+      pendingCounts.bookings,
+
+    "/staff/viewings":
+      pendingCounts.viewings,
+
+    "/staff/notifications":
+      pendingCounts.notifications,
+
+    "/staff/contacts":
+      pendingCounts.contacts,
   };
 
-  // Loading / SSR shell
-  if (!mounted || status === "loading") {
+  // ─────────────────────────────────────────────────────────────────────────
+  // Staff position
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const rawPosition =
+    staffProfile?.position?.trim() ?? "";
+
+  const position =
+    STAFF_POSITIONS.includes(
+      rawPosition as StaffPosition
+    )
+      ? (rawPosition as StaffPosition)
+      : null;
+
+  const positionMeta = position
+    ? POSITION_META[position]
+    : {
+        label: "Staff Member",
+        color: "bg-[#7A1B0F]",
+      };
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Loading
+  // ─────────────────────────────────────────────────────────────────────────
+
+  if (
+    !mounted ||
+    status === "loading"
+  ) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-slate-400 text-sm">Loading dashboard…</p>
+
+          <div className="w-10 h-10 border-2 border-[#7A1B0F] border-t-transparent rounded-full animate-spin" />
+
+          <p className="text-slate-400 text-sm">
+            Loading dashboard…
+          </p>
+
         </div>
       </div>
     );
   }
 
-  if (!isStaff) return null;
+  if (!isStaff) {
+    return null;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Sidebar
+  // ─────────────────────────────────────────────────────────────────────────
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
+
       {/* Logo */}
       <div className="px-6 py-5 border-b border-slate-800">
+
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 bg-violet-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">
+
+          <div className="w-8 h-8 bg-[#7A1B0F] rounded-lg flex items-center justify-center text-white font-bold text-sm">
             Jluv
           </div>
+
           <div>
+
             <h1 className="text-white font-bold text-base leading-none">
-              Jluv<span className="text-violet-400">Stays</span>
+              Jluv
+              <span className="text-[#7A1B0F]">
+                Stays
+              </span>
             </h1>
-            <p className="text-slate-500 text-[10px] mt-0.5 uppercase tracking-wider">Staff Portal</p>
+
+            <p className="text-slate-500 text-[10px] mt-0.5 uppercase tracking-wider">
+              Staff Portal
+            </p>
+
           </div>
+
         </div>
+
       </div>
 
-      {/* Nav */}
+      {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-6">
+
         {NAV_SECTIONS.map((section) => {
-          const visible = section.items.filter(item =>
-            item.allowedPositions.includes(position)
-          );
-          if (visible.length === 0) return null;
+
+          const visibleItems =
+            section.items.filter((item) => {
+
+              // If StaffProfile has not loaded yet,
+              // don't expose position-restricted pages.
+              if (!position) {
+                return (
+                  item.href === "/staff" ||
+                  item.href === "/staff/profile" ||
+                  item.href === "/staff/notifications"
+                );
+              }
+
+              return item.allowedPositions.includes(
+                position
+              );
+            });
+
+          if (visibleItems.length === 0) {
+            return null;
+          }
+
           return (
             <div key={section.title}>
+
               <p className="text-slate-600 text-[10px] font-semibold uppercase tracking-widest px-3 mb-1.5">
                 {section.title}
               </p>
+
               <div className="space-y-0.5">
-                {visible.map((item) => {
-                  const isActive = item.href === "/staff"
-                    ? pathname === "/staff"
-                    : pathname.startsWith(item.href);
-                  const badge = badges[item.href];
+
+                {visibleItems.map((item) => {
+
+                  const isActive =
+                    item.href === "/staff"
+                      ? pathname === "/staff"
+                      : pathname.startsWith(
+                          item.href
+                        );
+
+                  const badge =
+                    badges[item.href];
+
                   return (
                     <Link
                       key={item.href}
                       href={item.href}
-                      onClick={() => setSidebarOpen(false)}
+                      onClick={() =>
+                        setSidebarOpen(false)
+                      }
                       className={`
-                        group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150
-                        ${isActive
-                          ? "bg-violet-600 text-white shadow-lg shadow-violet-600/20"
-                          : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+                        group flex items-center gap-3
+                        px-3 py-2.5 rounded-xl
+                        text-sm font-medium
+                        transition-all duration-150
+
+                        ${
+                          isActive
+                            ? "bg-[#7A1B0F] text-white shadow-lg shadow-[#7A1B0F]/20"
+                            : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"
                         }
                       `}
                     >
-                      <span className={`flex-shrink-0 ${isActive ? "text-white" : "text-slate-500 group-hover:text-slate-300"}`}>
+
+                      <span
+                        className={`
+                          flex-shrink-0
+
+                          ${
+                            isActive
+                              ? "text-white"
+                              : "text-slate-500 group-hover:text-slate-300"
+                          }
+                        `}
+                      >
                         {item.icon}
                       </span>
-                      <span className="flex-1 truncate">{item.label}</span>
-                      {badge != null && badge > 0 && (
-                        <span className={`
-                          flex-shrink-0 min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold flex items-center justify-center
-                          ${isActive ? "bg-white/20 text-white" : "bg-violet-600 text-white"}
-                        `}>
-                          {badge > 99 ? "99+" : badge}
-                        </span>
-                      )}
+
+                      <span className="flex-1 truncate">
+                        {item.label}
+                      </span>
+
+                      {badge != null &&
+                        badge > 0 && (
+                          <span
+                            className={`
+                              flex-shrink-0
+                              min-w-[20px]
+                              h-5
+                              px-1.5
+                              rounded-full
+                              text-[10px]
+                              font-bold
+                              flex
+                              items-center
+                              justify-center
+
+                              ${
+                                isActive
+                                  ? "bg-white/20 text-white"
+                                  : "bg-[#7A1B0F] text-white"
+                              }
+                            `}
+                          >
+                            {badge > 99
+                              ? "99+"
+                              : badge}
+                          </span>
+                        )}
+
                     </Link>
                   );
                 })}
+
               </div>
+
             </div>
           );
         })}
+
       </nav>
 
       {/* User footer */}
       <div className="px-3 py-4 border-t border-slate-800">
-        <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-800 transition cursor-default mb-1">
-          <div className={`w-8 h-8 ${posMeta.color} rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
-            {session?.user?.name?.charAt(0).toUpperCase() ?? "?"}
-          </div>
+
+        <Link
+          href="/staff/profile"
+          onClick={() =>
+            setSidebarOpen(false)
+          }
+          className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-800 transition mb-1"
+        >
+
+          {/* Profile photo */}
+          {userPhoto ? (
+            <Image
+              src={userPhoto}
+              alt={
+                sessionUser.name ??
+                "Profile"
+              }
+              width={32}
+              height={32}
+              className="w-8 h-8 rounded-full object-cover flex-shrink-0"
+            />
+          ) : (
+            <div
+              className={`
+                w-8 h-8
+                ${positionMeta.color}
+                rounded-full
+                flex items-center justify-center
+                text-white text-xs font-bold
+                flex-shrink-0
+              `}
+            >
+              {sessionUser.name
+                ?.charAt(0)
+                .toUpperCase() ?? "?"}
+            </div>
+          )}
+
           <div className="flex-1 min-w-0">
-            <p className="text-slate-200 text-sm font-medium truncate">{session?.user?.name}</p>
-            <p className="text-slate-500 text-[11px]">{posMeta.label}</p>
+
+            <p className="text-slate-200 text-sm font-medium truncate">
+              {sessionUser.name ??
+                "Staff Member"}
+            </p>
+
+            <p className="text-slate-500 text-[11px] truncate">
+              {position
+                ? positionMeta.label
+                : "Staff Member"}
+            </p>
+
           </div>
-        </div>
+
+        </Link>
+
+        {/* Sign out */}
         <button
-          onClick={() => signOut({ callbackUrl: "/login" })}
+          onClick={() =>
+            signOut({
+              callbackUrl: "/login",
+            })
+          }
           className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-500 hover:text-red-400 hover:bg-slate-800 transition text-sm"
         >
           <Icon.SignOut />
           <span>Sign out</span>
         </button>
+
       </div>
+
     </div>
   );
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Layout
+  // ─────────────────────────────────────────────────────────────────────────
+
   return (
     <div className="min-h-screen bg-slate-50 flex">
-      {/* Desktop sidebar */}
+
+      {/* Desktop Sidebar */}
       <aside className="hidden lg:flex w-64 bg-slate-950 flex-col fixed top-0 left-0 bottom-0 z-40">
+
         <SidebarContent />
+
       </aside>
 
-      {/* Mobile sidebar overlay */}
+      {/* Mobile Sidebar */}
       {sidebarOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex">
+
+          {/* Overlay */}
           <div
             className="fixed inset-0 bg-black/60 backdrop-blur-sm"
-            onClick={() => setSidebarOpen(false)}
+            onClick={() =>
+              setSidebarOpen(false)
+            }
           />
+
+          {/* Sidebar */}
           <aside className="relative w-72 bg-slate-950 flex flex-col h-full z-50 shadow-2xl">
+
             <button
-              onClick={() => setSidebarOpen(false)}
+              onClick={() =>
+                setSidebarOpen(false)
+              }
               className="absolute top-4 right-4 text-slate-400 hover:text-white"
             >
               <Icon.Close />
             </button>
+
             <SidebarContent />
+
           </aside>
+
         </div>
       )}
 
-      {/* Main content */}
+      {/* Main */}
       <div className="flex-1 lg:ml-64 flex flex-col min-h-screen">
-        {/* Mobile topbar */}
+
+        {/* Mobile top bar */}
         <header className="lg:hidden sticky top-0 z-30 bg-white border-b border-slate-200 px-4 py-3 flex items-center gap-3">
-          <button onClick={() => setSidebarOpen(true)} className="text-slate-600 hover:text-slate-900">
+
+          <button
+            onClick={() =>
+              setSidebarOpen(true)
+            }
+            className="text-slate-600 hover:text-slate-900"
+          >
             <Icon.Menu />
           </button>
+
           <span className="font-semibold text-slate-800">
-            Jluv<span className="text-violet-600">Stays</span>
+            Jluv
+            <span className="text-[#7A1B0F]">
+              Stays
+            </span>
           </span>
-          <div className="ml-auto flex items-center gap-2">
-            <Link
-              href="/staff/notifications"
-              className="relative text-slate-500 hover:text-slate-800 p-1"
-            >
-              <Icon.Notifications />
-              {pendingCounts.notifications > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
-                  {pendingCounts.notifications > 9 ? "9+" : pendingCounts.notifications}
-                </span>
-              )}
-            </Link>
-            {(pendingCounts.bookings + pendingCounts.viewings) > 0 && (
-              <span className="bg-red-500 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                {pendingCounts.bookings + pendingCounts.viewings}
-              </span>
-            )}
-          </div>
+
+          {(pendingCounts.bookings +
+            pendingCounts.viewings +
+            pendingCounts.notifications +
+            pendingCounts.contacts) >
+            0 && (
+            <span className="ml-auto bg-red-500 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
+              {pendingCounts.bookings +
+                pendingCounts.viewings +
+                pendingCounts.notifications +
+                pendingCounts.contacts >
+              99
+                ? "99+"
+                : pendingCounts.bookings +
+                    pendingCounts.viewings +
+                    pendingCounts.notifications +
+                    pendingCounts.contacts}
+            </span>
+          )}
+
         </header>
 
+        {/* Page content */}
         <main className="flex-1 p-6 lg:p-8">
+
           {children}
+
         </main>
+
       </div>
+
     </div>
   );
 }

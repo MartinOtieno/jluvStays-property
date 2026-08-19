@@ -9,18 +9,28 @@ import { isAdminOrStaff } from "@/lib/roles";
 
 // -----------------------------------------------
 // GET /api/units — list units, with filters
+//
 // Query params:
 //   rentalType  -> "long_term" | "mid_term" | "short_term"
 //   minPrice / maxPrice -> against pricePerMonth
-//   moveIn / moveOut    -> ISO dates; excludes units with an
-//                          overlapping non-cancelled booking in that range
-//   status              -> defaults to "active"; "all" bypasses filtering
+//   moveIn / moveOut -> ISO dates; excludes units with an
+//                        overlapping non-cancelled booking in that range
+//   status -> defaults to "active"; "all" bypasses filtering
+//
+// NOTE:
+// short_term units are still allowed through this API because
+// the admin Rooms page may need to fetch short_term units in
+// order to assign Rooms to them.
+//
+// The PUBLIC /listings page is responsible for hiding short_term
+// units and displaying Rooms instead.
 // -----------------------------------------------
 export async function GET(req: NextRequest) {
   try {
     await connectDB();
 
     const { searchParams } = new URL(req.url);
+
     const rentalType = searchParams.get("rentalType");
     const minPrice = searchParams.get("minPrice");
     const maxPrice = searchParams.get("maxPrice");
@@ -29,65 +39,203 @@ export async function GET(req: NextRequest) {
     const status = searchParams.get("status") ?? "active";
 
     const filter: Record<string, unknown> = {};
+
+    // -----------------------------------------------
+    // Status filter
+    // -----------------------------------------------
+
     if (status !== "all") {
       filter.status = status;
     }
 
-    // rentalType can be any of the three. short_term units aren't directly
-    // bookable (their Rooms are), but they still need to be listable here
-    // — e.g. the admin Rooms page needs to fetch short_term units to
-    // assign a Room to one.
+    // -----------------------------------------------
+    // Rental type filter
+    //
+    // Supports:
+    //   ?rentalType=long_term
+    //   ?rentalType=mid_term
+    //   ?rentalType=short_term
+    //
+    // Also supports multiple types:
+    //   ?rentalType=long_term,mid_term
+    //
+    // This is useful for the public listings page when
+    // "All" is selected.
+    // -----------------------------------------------
+
     if (rentalType) {
-      if (!["long_term", "mid_term", "short_term"].includes(rentalType)) {
+      const requestedTypes = rentalType
+        .split(",")
+        .map((type) => type.trim())
+        .filter(Boolean);
+
+      const allowedRentalTypes = [
+        "long_term",
+        "mid_term",
+        "short_term",
+      ];
+
+      const invalidType = requestedTypes.some(
+        (type) => !allowedRentalTypes.includes(type)
+      );
+
+      if (
+        requestedTypes.length === 0 ||
+        invalidType
+      ) {
         return NextResponse.json(
-          { success: false, message: "Invalid rentalType" },
+          {
+            success: false,
+            message: "Invalid rentalType",
+          },
           { status: 400 }
         );
       }
-      filter.rentalType = rentalType;
+
+      if (requestedTypes.length === 1) {
+        filter.rentalType = requestedTypes[0];
+      } else {
+        filter.rentalType = {
+          $in: requestedTypes,
+        };
+      }
     }
+
+    // -----------------------------------------------
+    // Price filter
+    // -----------------------------------------------
 
     if (minPrice || maxPrice) {
-      filter.pricePerMonth = {};
-      if (minPrice) (filter.pricePerMonth as Record<string, number>).$gte = Number(minPrice);
-      if (maxPrice) (filter.pricePerMonth as Record<string, number>).$lte = Number(maxPrice);
+      const priceFilter: Record<string, number> = {};
+
+      if (minPrice) {
+        const min = Number(minPrice);
+
+        if (Number.isNaN(min)) {
+          return NextResponse.json(
+            {
+              success: false,
+              message: "Invalid minPrice",
+            },
+            { status: 400 }
+          );
+        }
+
+        priceFilter.$gte = min;
+      }
+
+      if (maxPrice) {
+        const max = Number(maxPrice);
+
+        if (Number.isNaN(max)) {
+          return NextResponse.json(
+            {
+              success: false,
+              message: "Invalid maxPrice",
+            },
+            { status: 400 }
+          );
+        }
+
+        priceFilter.$lte = max;
+      }
+
+      filter.pricePerMonth = priceFilter;
     }
 
-    let units = await Unit.find(filter).sort({ createdAt: -1 });
+    // -----------------------------------------------
+    // Fetch units
+    // -----------------------------------------------
 
-    // Availability filtering: only applied when both dates are given.
+    let units = await Unit.find(filter).sort({
+      createdAt: -1,
+    });
+
+    // -----------------------------------------------
+    // Availability filtering
+    //
+    // Only applied when BOTH moveIn and moveOut
+    // dates are provided.
+    // -----------------------------------------------
+
     if (moveIn && moveOut) {
       const moveInDate = new Date(moveIn);
       const moveOutDate = new Date(moveOut);
 
-      if (isNaN(moveInDate.getTime()) || isNaN(moveOutDate.getTime()) || moveInDate >= moveOutDate) {
+      if (
+        Number.isNaN(moveInDate.getTime()) ||
+        Number.isNaN(moveOutDate.getTime()) ||
+        moveInDate >= moveOutDate
+      ) {
         return NextResponse.json(
-          { success: false, message: "Invalid moveIn/moveOut date range" },
+          {
+            success: false,
+            message:
+              "Invalid moveIn/moveOut date range",
+          },
           { status: 400 }
         );
       }
 
-      const unitIds = units.map((u) => u._id);
+      const unitIds = units.map(
+        (unit) => unit._id
+      );
 
-      const overlapping = await Booking.find({
-        unit: { $in: unitIds },
-        status: { $in: ["pending", "confirmed"] },
-        moveInDate: { $lt: moveOutDate },
-        moveOutDate: { $gt: moveInDate },
-      }).distinct("unit");
+      // Find units that have an overlapping
+      // pending or confirmed booking.
+      const overlapping =
+        await Booking.find({
+          unit: {
+            $in: unitIds,
+          },
+          status: {
+            $in: ["pending", "confirmed"],
+          },
+          moveInDate: {
+            $lt: moveOutDate,
+          },
+          moveOutDate: {
+            $gt: moveInDate,
+          },
+        }).distinct("unit");
 
-      const bookedIds = new Set(overlapping.map((id) => id.toString()));
-      units = units.filter((u) => !bookedIds.has(u._id.toString()));
+      const bookedIds = new Set(
+        overlapping.map((id) =>
+          id.toString()
+        )
+      );
+
+      units = units.filter(
+        (unit) =>
+          !bookedIds.has(
+            unit._id.toString()
+          )
+      );
     }
 
+    // -----------------------------------------------
+    // Response
+    // -----------------------------------------------
+
     return NextResponse.json(
-      { success: true, count: units.length, data: units },
+      {
+        success: true,
+        count: units.length,
+        data: units,
+      },
       { status: 200 }
     );
   } catch (error) {
-    console.error("GET /api/units error:", error);
+    console.error(
+      "GET /api/units error:",
+      error
+    );
+
     return NextResponse.json(
-      { success: false, message: "Failed to fetch units" },
+      {
+        success: false,
+        message: "Failed to fetch units",
+      },
       { status: 500 }
     );
   }
@@ -95,32 +243,59 @@ export async function GET(req: NextRequest) {
 
 // -----------------------------------------------
 // POST /api/units — create a new unit listing
-// Restricted to admin and staff — same role rules as middleware's
-// /admin and /staff route protection.
+//
+// Restricted to admin and staff.
 // -----------------------------------------------
 export async function POST(req: NextRequest) {
   try {
-    const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+    // -----------------------------------------------
+    // Authentication
+    // -----------------------------------------------
+
+    const token = await getToken({
+      req,
+      secret: process.env.NEXTAUTH_SECRET,
+    });
 
     if (!token) {
       return NextResponse.json(
-        { success: false, message: "Authentication required" },
+        {
+          success: false,
+          message: "Authentication required",
+        },
         { status: 401 }
       );
     }
+
+    // -----------------------------------------------
+    // Role authorization
+    // -----------------------------------------------
 
     const role = token.role as string;
 
     if (!isAdminOrStaff(role)) {
       return NextResponse.json(
-        { success: false, message: "You don't have permission to create units" },
+        {
+          success: false,
+          message:
+            "You don't have permission to create units",
+        },
         { status: 403 }
       );
     }
 
+    // -----------------------------------------------
+    // Database connection
+    // -----------------------------------------------
+
     await connectDB();
 
+    // -----------------------------------------------
+    // Request body
+    // -----------------------------------------------
+
     const body = await req.json();
+
     const {
       title,
       description,
@@ -132,48 +307,106 @@ export async function POST(req: NextRequest) {
       amenities,
     } = body;
 
-    // owner is derived from the session, not accepted from the client.
-    // NOTE: assuming the JWT carries the user id as token.id (matching
-    // the pattern in Navbar.tsx). Falls back to token.sub. Verify this
-    // matches your actual JWT callback shape.
-    const owner = (token.id as string | undefined) ?? (token.sub as string | undefined);
-    if (!owner) {
-      return NextResponse.json(
-        { success: false, message: "Could not determine owner from session" },
-        { status: 400 }
-      );
-    }
+    // -----------------------------------------------
+    // Determine owner from session
+    //
+    // Owner is NOT accepted from the client.
+    // -----------------------------------------------
 
-    if (!title || !description || !rentalType) {
+    const owner =
+      (token.id as string | undefined) ??
+      (token.sub as string | undefined);
+
+    if (!owner) {
       return NextResponse.json(
         {
           success: false,
-          message: "title, description and rentalType are required",
+          message:
+            "Could not determine owner from session",
         },
         { status: 400 }
       );
     }
 
-    if (!["long_term", "mid_term", "short_term"].includes(rentalType)) {
+    // -----------------------------------------------
+    // Required fields
+    // -----------------------------------------------
+
+    if (
+      !title ||
+      !description ||
+      !rentalType
+    ) {
       return NextResponse.json(
-        { success: false, message: "Invalid rentalType" },
+        {
+          success: false,
+          message:
+            "title, description and rentalType are required",
+        },
         { status: 400 }
       );
     }
 
-    if ((rentalType === "long_term" || rentalType === "mid_term") && !pricePerMonth) {
+    // -----------------------------------------------
+    // Validate rental type
+    // -----------------------------------------------
+
+    if (
+      ![
+        "long_term",
+        "mid_term",
+        "short_term",
+      ].includes(rentalType)
+    ) {
       return NextResponse.json(
-        { success: false, message: "pricePerMonth is required for long_term/mid_term units" },
+        {
+          success: false,
+          message: "Invalid rentalType",
+        },
         { status: 400 }
       );
     }
 
-    if (rentalType !== "short_term" && furnished === undefined) {
+    // -----------------------------------------------
+    // Long-term and mid-term require price
+    // -----------------------------------------------
+
+    if (
+      (rentalType === "long_term" ||
+        rentalType === "mid_term") &&
+      !pricePerMonth
+    ) {
       return NextResponse.json(
-        { success: false, message: "furnished is required for long_term/mid_term units" },
+        {
+          success: false,
+          message:
+            "pricePerMonth is required for long_term/mid_term units",
+        },
         { status: 400 }
       );
     }
+
+    // -----------------------------------------------
+    // Long-term and mid-term require furnished
+    // -----------------------------------------------
+
+    if (
+      rentalType !== "short_term" &&
+      furnished === undefined
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "furnished is required for long_term/mid_term units",
+        },
+        { status: 400 }
+      );
+    }
+
+    // -----------------------------------------------
+    // Create unit
+    // -----------------------------------------------
 
     const unit = await Unit.create({
       title,
@@ -187,14 +420,29 @@ export async function POST(req: NextRequest) {
       owner,
     });
 
+    // -----------------------------------------------
+    // Response
+    // -----------------------------------------------
+
     return NextResponse.json(
-      { success: true, message: "Unit created", data: unit },
+      {
+        success: true,
+        message: "Unit created",
+        data: unit,
+      },
       { status: 201 }
     );
   } catch (error) {
-    console.error("POST /api/units error:", error);
+    console.error(
+      "POST /api/units error:",
+      error
+    );
+
     return NextResponse.json(
-      { success: false, message: "Failed to create unit" },
+      {
+        success: false,
+        message: "Failed to create unit",
+      },
       { status: 500 }
     );
   }
