@@ -1,29 +1,20 @@
 "use client";
 
-import { useSession } from "next-auth/react";
-import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useSession, signOut } from "next-auth/react";
+import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { signOut } from "next-auth/react";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
-type StaffPosition =
-  | "property_manager"
-  | "receptionist"
-  | "caretaker"
-  | "accountant"
-  | "security"
-  | "maintenance";
-
 interface StaffProfile {
   _id: string;
   user: string;
   employeeNumber: string;
-  position: StaffPosition | string;
+  position: string;
   department?: string;
   hireDate?: string;
   salary?: number;
@@ -38,18 +29,12 @@ interface SessionUser {
   photo?: string;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Staff positions
-// ─────────────────────────────────────────────────────────────────────────────
-
-const STAFF_POSITIONS: StaffPosition[] = [
-  "property_manager",
-  "receptionist",
-  "caretaker",
-  "accountant",
-  "security",
-  "maintenance",
-];
+interface PendingCounts {
+  bookings: number;
+  viewings: number;
+  notifications: number;
+  contacts: number;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SVG Icons
@@ -146,20 +131,20 @@ const Icon = {
     </svg>
   ),
 
-  Users: () => (
-    <svg
-      width="18"
-      height="18"
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-      strokeWidth={1.8}
-    >
-      <circle cx="9" cy="7" r="4" />
-      <path d="M3 21v-2a4 4 0 014-4h4a4 4 0 014 4v2" />
-      <path d="M16 3.13a4 4 0 010 7.75M21 21v-2a4 4 0 00-3-3.87" />
-    </svg>
-  ),
+  // Users: () => (
+  //   <svg
+  //     width="18"
+  //     height="18"
+  //     fill="none"
+  //     viewBox="0 0 24 24"
+  //     stroke="currentColor"
+  //     strokeWidth={1.8}
+  //   >
+  //     <circle cx="9" cy="7" r="4" />
+  //     <path d="M3 21v-2a4 4 0 014-4h4a4 4 0 014 4v2" />
+  //     <path d="M16 3.13a4 4 0 010 7.75M21 21v-2a4 4 0 00-3-3.87" />
+  //   </svg>
+  // ),
 
   Reports: () => (
     <svg
@@ -258,174 +243,79 @@ const Icon = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Position metadata
-// ─────────────────────────────────────────────────────────────────────────────
-
-const POSITION_META: Record<
-  StaffPosition,
-  { label: string; color: string }
-> = {
-  property_manager: {
-    label: "Property Manager",
-    color: "bg-emerald-500",
-  },
-
-  receptionist: {
-    label: "Receptionist",
-    color: "bg-violet-500",
-  },
-
-  caretaker: {
-    label: "Caretaker",
-    color: "bg-amber-500",
-  },
-
-  accountant: {
-    label: "Accountant",
-    color: "bg-rose-500",
-  },
-
-  security: {
-    label: "Security",
-    color: "bg-slate-500",
-  },
-
-  maintenance: {
-    label: "Maintenance",
-    color: "bg-orange-500",
-  },
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Navigation
 // ─────────────────────────────────────────────────────────────────────────────
 
-const NAV_SECTIONS: {
-  title: string;
-  items: {
-    label: string;
-    href: string;
-    icon: React.ReactNode;
-    allowedPositions: StaffPosition[];
-  }[];
-}[] = [
+const NAV_SECTIONS = [
   {
     title: "Main",
-
     items: [
       {
         label: "Overview",
         href: "/staff",
         icon: <Icon.Overview />,
-        allowedPositions: STAFF_POSITIONS,
       },
     ],
   },
 
   {
     title: "Management",
-
     items: [
       {
         label: "Units",
         href: "/staff/units",
         icon: <Icon.Units />,
-        allowedPositions: [
-          "property_manager",
-          "caretaker",
-        ],
       },
-
       {
         label: "Rooms",
         href: "/staff/rooms",
         icon: <Icon.Rooms />,
-        allowedPositions: [
-          "property_manager",
-          "caretaker",
-          "maintenance",
-        ],
       },
-
       {
         label: "Bookings",
         href: "/staff/bookings",
         icon: <Icon.Bookings />,
-        allowedPositions: [
-          "property_manager",
-          "receptionist",
-          "accountant",
-        ],
       },
-
       {
         label: "Check-in / Check-out",
         href: "/staff/checkin",
         icon: <Icon.CheckIn />,
-        allowedPositions: [
-          "property_manager",
-          "receptionist",
-        ],
       },
-
       {
         label: "Viewing Requests",
         href: "/staff/viewings",
         icon: <Icon.Viewings />,
-        allowedPositions: [
-          "property_manager",
-          "receptionist",
-        ],
       },
-
-      {
-        label: "Users",
-        href: "/staff/users",
-        icon: <Icon.Users />,
-        allowedPositions: [
-          "property_manager",
-          "receptionist",
-        ],
-      },
+      // {
+      //   label: "Users",
+      //   href: "/staff/users",
+      //   icon: <Icon.Users />,
+      // },
     ],
   },
 
   {
     title: "System",
-
     items: [
       {
         label: "Reports",
         href: "/staff/reports",
         icon: <Icon.Reports />,
-        allowedPositions: [
-          "property_manager",
-          "accountant",
-        ],
       },
-
       {
         label: "Contacts",
         href: "/staff/contacts",
         icon: <Icon.Contacts />,
-        allowedPositions: [
-          "property_manager",
-          "receptionist",
-        ],
       },
-
       {
         label: "Notifications",
         href: "/staff/notifications",
         icon: <Icon.Notifications />,
-        allowedPositions: STAFF_POSITIONS,
       },
-
       {
         label: "My Profile",
         href: "/staff/profile",
         icon: <Icon.Profile />,
-        allowedPositions: STAFF_POSITIONS,
       },
     ],
   },
@@ -451,12 +341,13 @@ export default function StaffLayout({
   const [staffProfile, setStaffProfile] =
     useState<StaffProfile | null>(null);
 
-  const [pendingCounts, setPendingCounts] = useState({
-    bookings: 0,
-    viewings: 0,
-    notifications: 0,
-    contacts: 0,
-  });
+  const [pendingCounts, setPendingCounts] =
+    useState<PendingCounts>({
+      bookings: 0,
+      viewings: 0,
+      notifications: 0,
+      contacts: 0,
+    });
 
   // ─────────────────────────────────────────────────────────────────────────
   // Mounted
@@ -477,14 +368,17 @@ export default function StaffLayout({
   const userId = sessionUser.id ?? "";
   const userPhoto = sessionUser.photo ?? "";
 
-  // IMPORTANT:
-  // User.role must be "staff".
-  //
-  // StaffProfile.position determines what the staff member can access.
+  /**
+   * IMPORTANT:
+   *
+   * User.role determines whether the user can enter the staff portal.
+   *
+   * StaffProfile.position is only the staff member's job title.
+   */
   const isStaff = userRole === "staff";
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Load StaffProfile
+  // Load Staff Profile
   // ─────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -496,53 +390,63 @@ export default function StaffLayout({
       return;
     }
 
+    let cancelled = false;
+
     const loadStaffProfile = async () => {
       try {
         const response = await fetch(
-          `/api/staff/profile?userId=${encodeURIComponent(userId)}`
+          `/api/staff/profile?userId=${encodeURIComponent(userId)}`,
+          {
+            method: "GET",
+            cache: "no-store",
+          }
         );
 
         if (!response.ok) {
-          console.error(
-            "Failed to load staff profile:",
-            response.status
-          );
           return;
         }
 
         const data = await response.json();
 
-        if (data.success && data.data) {
+        if (
+          !cancelled &&
+          data?.success &&
+          data?.data
+        ) {
           setStaffProfile(data.data);
         }
       } catch (error) {
         console.error(
-          "Error loading staff profile:",
+          "Failed to load staff profile:",
           error
         );
       }
     };
 
     loadStaffProfile();
+
+    return () => {
+      cancelled = true;
+    };
   }, [status, userId, isStaff]);
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Auth guard
+  // Authentication Guard
   // ─────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!mounted) return;
 
     if (status === "unauthenticated") {
-      router.push("/login");
+      router.replace("/login");
       return;
     }
 
     if (status === "authenticated" && !isStaff) {
       if (userRole === "admin") {
-        router.push("/admin");
+        router.replace("/admin");
       } else {
-        router.push("/");
+        router.replace("/");
       }
     }
   }, [
@@ -554,7 +458,7 @@ export default function StaffLayout({
   ]);
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Fetch badge counts
+  // Fetch Badges
   // ─────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -566,6 +470,8 @@ export default function StaffLayout({
       return;
     }
 
+    let cancelled = false;
+
     const fetchCounts = async () => {
       try {
         const [
@@ -574,55 +480,81 @@ export default function StaffLayout({
           notificationsRes,
           contactsRes,
         ] = await Promise.all([
-          fetch("/api/bookings"),
-          fetch("/api/viewing-request"),
+          fetch("/api/bookings", {
+            cache: "no-store",
+          }),
+
+          fetch("/api/viewing-request", {
+            cache: "no-store",
+          }),
+
           fetch(
             `/api/notifications?userId=${encodeURIComponent(
               userId
-            )}&unreadOnly=true`
+            )}&unreadOnly=true`,
+            {
+              cache: "no-store",
+            }
           ),
-          fetch("/api/contact?status=unread"),
+
+          fetch("/api/contact?status=unread", {
+            cache: "no-store",
+          }),
         ]);
 
-        const bookings = await bookingsRes.json();
-        const viewings = await viewingsRes.json();
-        const notifications =
-          await notificationsRes.json();
-        const contacts = await contactsRes.json();
+        const [
+          bookings,
+          viewings,
+          notifications,
+          contacts,
+        ] = await Promise.all([
+          bookingsRes.json(),
+          viewingsRes.json(),
+          notificationsRes.json(),
+          contactsRes.json(),
+        ]);
+
+        if (cancelled) return;
+
+        const bookingCount =
+          bookings?.success &&
+          Array.isArray(bookings?.data)
+            ? bookings.data.filter(
+                (booking: { status?: string }) =>
+                  booking.status === "pending"
+              ).length
+            : 0;
+
+        const viewingCount =
+          viewings?.success &&
+          Array.isArray(viewings?.data)
+            ? viewings.data.filter(
+                (viewing: { status?: string }) =>
+                  viewing.status === "pending"
+              ).length
+            : 0;
+
+        const notificationCount =
+          notifications?.success &&
+          typeof notifications.unreadCount === "number"
+            ? notifications.unreadCount
+            : 0;
+
+        const contactCount =
+          contacts?.success &&
+          Array.isArray(contacts?.messages)
+            ? contacts.messages.length
+            : 0;
 
         setPendingCounts({
-          bookings:
-            bookings.success &&
-            Array.isArray(bookings.data)
-              ? bookings.data.filter(
-                  (b: { status: string }) =>
-                    b.status === "pending"
-                ).length
-              : 0,
-
-          viewings:
-            viewings.success &&
-            Array.isArray(viewings.data)
-              ? viewings.data.filter(
-                  (v: { status: string }) =>
-                    v.status === "pending"
-                ).length
-              : 0,
-
-          notifications:
-            notifications.success
-              ? notifications.unreadCount ?? 0
-              : 0,
-
-          contacts:
-            contacts.success &&
-            Array.isArray(contacts.messages)
-              ? contacts.messages.length
-              : 0,
+          bookings: bookingCount,
+          viewings: viewingCount,
+          notifications: notificationCount,
+          contacts: contactCount,
         });
       } catch (error) {
         console.error(
-          "Error loading notification counts:",
+          "Failed to fetch dashboard counts:",
           error
         );
       }
@@ -635,15 +567,14 @@ export default function StaffLayout({
       60_000
     );
 
-    return () => clearInterval(interval);
-  }, [
-    status,
-    isStaff,
-    userId,
-  ]);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [status, isStaff, userId]);
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Badge map
+  // Badges
   // ─────────────────────────────────────────────────────────────────────────
 
   const badges: Record<string, number> = {
@@ -661,25 +592,22 @@ export default function StaffLayout({
   };
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Staff position
+  // Staff Position
   // ─────────────────────────────────────────────────────────────────────────
 
-  const rawPosition =
-    staffProfile?.position?.trim() ?? "";
-
   const position =
-    STAFF_POSITIONS.includes(
-      rawPosition as StaffPosition
-    )
-      ? (rawPosition as StaffPosition)
-      : null;
+    staffProfile?.position?.trim() ||
+    "Staff Member";
 
-  const positionMeta = position
-    ? POSITION_META[position]
-    : {
-        label: "Staff Member",
-        color: "bg-[#7A1B0F]",
-      };
+  // ─────────────────────────────────────────────────────────────────────────
+  // Total Notifications
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const totalPending =
+    pendingCounts.bookings +
+    pendingCounts.viewings +
+    pendingCounts.notifications +
+    pendingCounts.contacts;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Loading
@@ -692,18 +620,17 @@ export default function StaffLayout({
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950">
         <div className="flex flex-col items-center gap-4">
-
           <div className="w-10 h-10 border-2 border-[#7A1B0F] border-t-transparent rounded-full animate-spin" />
 
           <p className="text-slate-400 text-sm">
             Loading dashboard…
           </p>
-
         </div>
       </div>
     );
   }
 
+  // Prevent unauthorized content from flashing
   if (!isStaff) {
     return null;
   }
@@ -717,7 +644,6 @@ export default function StaffLayout({
 
       {/* Logo */}
       <div className="px-6 py-5 border-b border-slate-800">
-
         <div className="flex items-center gap-2.5">
 
           <div className="w-8 h-8 bg-[#7A1B0F] rounded-lg flex items-center justify-center text-white font-bold text-sm">
@@ -725,7 +651,6 @@ export default function StaffLayout({
           </div>
 
           <div>
-
             <h1 className="text-white font-bold text-base leading-none">
               Jluv
               <span className="text-[#7A1B0F]">
@@ -736,141 +661,111 @@ export default function StaffLayout({
             <p className="text-slate-500 text-[10px] mt-0.5 uppercase tracking-wider">
               Staff Portal
             </p>
-
           </div>
 
         </div>
-
       </div>
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-6">
 
-        {NAV_SECTIONS.map((section) => {
+        {NAV_SECTIONS.map((section) => (
+          <div key={section.title}>
 
-          const visibleItems =
-            section.items.filter((item) => {
+            <p className="text-slate-600 text-[10px] font-semibold uppercase tracking-widest px-3 mb-1.5">
+              {section.title}
+            </p>
 
-              // If StaffProfile has not loaded yet,
-              // don't expose position-restricted pages.
-              if (!position) {
+            <div className="space-y-0.5">
+
+              {section.items.map((item) => {
+                const isActive =
+                  item.href === "/staff"
+                    ? pathname === "/staff"
+                    : pathname.startsWith(
+                        item.href
+                      );
+
+                const badge =
+                  badges[item.href] ?? 0;
+
                 return (
-                  item.href === "/staff" ||
-                  item.href === "/staff/profile" ||
-                  item.href === "/staff/notifications"
-                );
-              }
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() =>
+                      setSidebarOpen(false)
+                    }
+                    className={`
+                      group flex items-center gap-3
+                      px-3 py-2.5 rounded-xl
+                      text-sm font-medium
+                      transition-all duration-150
 
-              return item.allowedPositions.includes(
-                position
-              );
-            });
-
-          if (visibleItems.length === 0) {
-            return null;
-          }
-
-          return (
-            <div key={section.title}>
-
-              <p className="text-slate-600 text-[10px] font-semibold uppercase tracking-widest px-3 mb-1.5">
-                {section.title}
-              </p>
-
-              <div className="space-y-0.5">
-
-                {visibleItems.map((item) => {
-
-                  const isActive =
-                    item.href === "/staff"
-                      ? pathname === "/staff"
-                      : pathname.startsWith(
-                          item.href
-                        );
-
-                  const badge =
-                    badges[item.href];
-
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() =>
-                        setSidebarOpen(false)
+                      ${
+                        isActive
+                          ? "bg-[#7A1B0F] text-white shadow-lg shadow-[#7A1B0F]/20"
+                          : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"
                       }
+                    `}
+                  >
+
+                    <span
                       className={`
-                        group flex items-center gap-3
-                        px-3 py-2.5 rounded-xl
-                        text-sm font-medium
-                        transition-all duration-150
+                        flex-shrink-0
 
                         ${
                           isActive
-                            ? "bg-[#7A1B0F] text-white shadow-lg shadow-[#7A1B0F]/20"
-                            : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+                            ? "text-white"
+                            : "text-slate-500 group-hover:text-slate-300"
                         }
                       `}
                     >
+                      {item.icon}
+                    </span>
 
+                    <span className="flex-1 truncate">
+                      {item.label}
+                    </span>
+
+                    {badge > 0 && (
                       <span
                         className={`
                           flex-shrink-0
+                          min-w-[20px]
+                          h-5
+                          px-1.5
+                          rounded-full
+                          text-[10px]
+                          font-bold
+                          flex
+                          items-center
+                          justify-center
 
                           ${
                             isActive
-                              ? "text-white"
-                              : "text-slate-500 group-hover:text-slate-300"
+                              ? "bg-white/20 text-white"
+                              : "bg-[#7A1B0F] text-white"
                           }
                         `}
                       >
-                        {item.icon}
+                        {badge > 99
+                          ? "99+"
+                          : badge}
                       </span>
+                    )}
 
-                      <span className="flex-1 truncate">
-                        {item.label}
-                      </span>
-
-                      {badge != null &&
-                        badge > 0 && (
-                          <span
-                            className={`
-                              flex-shrink-0
-                              min-w-[20px]
-                              h-5
-                              px-1.5
-                              rounded-full
-                              text-[10px]
-                              font-bold
-                              flex
-                              items-center
-                              justify-center
-
-                              ${
-                                isActive
-                                  ? "bg-white/20 text-white"
-                                  : "bg-[#7A1B0F] text-white"
-                              }
-                            `}
-                          >
-                            {badge > 99
-                              ? "99+"
-                              : badge}
-                          </span>
-                        )}
-
-                    </Link>
-                  );
-                })}
-
-              </div>
+                  </Link>
+                );
+              })}
 
             </div>
-          );
-        })}
+          </div>
+        ))}
 
       </nav>
 
-      {/* User footer */}
+      {/* User Footer */}
       <div className="px-3 py-4 border-t border-slate-800">
 
         <Link
@@ -881,12 +776,12 @@ export default function StaffLayout({
           className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-800 transition mb-1"
         >
 
-          {/* Profile photo */}
+          {/* Profile Photo */}
           {userPhoto ? (
             <Image
               src={userPhoto}
               alt={
-                sessionUser.name ??
+                sessionUser.name ||
                 "Profile"
               }
               width={32}
@@ -894,41 +789,31 @@ export default function StaffLayout({
               className="w-8 h-8 rounded-full object-cover flex-shrink-0"
             />
           ) : (
-            <div
-              className={`
-                w-8 h-8
-                ${positionMeta.color}
-                rounded-full
-                flex items-center justify-center
-                text-white text-xs font-bold
-                flex-shrink-0
-              `}
-            >
+            <div className="w-8 h-8 bg-[#7A1B0F] rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
               {sessionUser.name
                 ?.charAt(0)
-                .toUpperCase() ?? "?"}
+                .toUpperCase() || "?"}
             </div>
           )}
 
           <div className="flex-1 min-w-0">
 
             <p className="text-slate-200 text-sm font-medium truncate">
-              {sessionUser.name ??
+              {sessionUser.name ||
                 "Staff Member"}
             </p>
 
             <p className="text-slate-500 text-[11px] truncate">
-              {position
-                ? positionMeta.label
-                : "Staff Member"}
+              {position}
             </p>
 
           </div>
 
         </Link>
 
-        {/* Sign out */}
+        {/* Sign Out */}
         <button
+          type="button"
           onClick={() =>
             signOut({
               callbackUrl: "/login",
@@ -941,7 +826,6 @@ export default function StaffLayout({
         </button>
 
       </div>
-
     </div>
   );
 
@@ -954,9 +838,7 @@ export default function StaffLayout({
 
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex w-64 bg-slate-950 flex-col fixed top-0 left-0 bottom-0 z-40">
-
         <SidebarContent />
-
       </aside>
 
       {/* Mobile Sidebar */}
@@ -975,10 +857,12 @@ export default function StaffLayout({
           <aside className="relative w-72 bg-slate-950 flex flex-col h-full z-50 shadow-2xl">
 
             <button
+              type="button"
               onClick={() =>
                 setSidebarOpen(false)
               }
-              className="absolute top-4 right-4 text-slate-400 hover:text-white"
+              className="absolute top-4 right-4 z-10 text-slate-400 hover:text-white"
+              aria-label="Close menu"
             >
               <Icon.Close />
             </button>
@@ -986,21 +870,22 @@ export default function StaffLayout({
             <SidebarContent />
 
           </aside>
-
         </div>
       )}
 
-      {/* Main */}
+      {/* Main Content */}
       <div className="flex-1 lg:ml-64 flex flex-col min-h-screen">
 
-        {/* Mobile top bar */}
+        {/* Mobile Top Bar */}
         <header className="lg:hidden sticky top-0 z-30 bg-white border-b border-slate-200 px-4 py-3 flex items-center gap-3">
 
           <button
+            type="button"
             onClick={() =>
               setSidebarOpen(true)
             }
             className="text-slate-600 hover:text-slate-900"
+            aria-label="Open menu"
           >
             <Icon.Menu />
           </button>
@@ -1012,36 +897,22 @@ export default function StaffLayout({
             </span>
           </span>
 
-          {(pendingCounts.bookings +
-            pendingCounts.viewings +
-            pendingCounts.notifications +
-            pendingCounts.contacts) >
-            0 && (
-            <span className="ml-auto bg-red-500 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
-              {pendingCounts.bookings +
-                pendingCounts.viewings +
-                pendingCounts.notifications +
-                pendingCounts.contacts >
-              99
+          {totalPending > 0 && (
+            <span className="ml-auto bg-red-500 text-white text-[10px] font-bold rounded-full min-w-5 h-5 px-1 flex items-center justify-center">
+              {totalPending > 99
                 ? "99+"
-                : pendingCounts.bookings +
-                    pendingCounts.viewings +
-                    pendingCounts.notifications +
-                    pendingCounts.contacts}
+                : totalPending}
             </span>
           )}
 
         </header>
 
-        {/* Page content */}
+        {/* Page Content */}
         <main className="flex-1 p-6 lg:p-8">
-
           {children}
-
         </main>
 
       </div>
-
     </div>
   );
 }

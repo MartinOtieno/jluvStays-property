@@ -5,11 +5,27 @@ import Booking from "@/models/Booking";
 import User from "@/models/User";
 import { createNotification } from "@/lib/createNotification";
 
+// These are staff ACCESS ROLES/positions currently used by your
+// notification system.
+//
+// If your User.role is now simply "staff", change this query to:
+// role: "staff"
+// and use StaffProfile.position for the actual staff position.
 const BOOKING_STAFF_POSITIONS = [
   "property_manager",
   "receptionist",
   "accountant",
 ];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────────
+
+type BookingStatus =
+  | "pending"
+  | "confirmed"
+  | "cancelled"
+  | "completed";
 
 type PopulatedUnit = {
   _id: mongoose.Types.ObjectId;
@@ -30,9 +46,12 @@ type PopulatedTenant = {
   _id: mongoose.Types.ObjectId;
   name?: string;
   email?: string;
+  phone?: string;
 };
 
-// ─── Helper: notify all admins ────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: notify all admins
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function notifyAdmins(payload: {
   type:
@@ -68,7 +87,9 @@ async function notifyAdmins(payload: {
   }
 }
 
-// ─── Helper: notify relevant staff positions ─────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: notify relevant staff
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function notifyStaff(payload: {
   type:
@@ -108,6 +129,15 @@ async function notifyStaff(payload: {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PATCH /api/bookings/[id]
+//
+// Supported status changes:
+//
+// pending   -> confirmed
+// pending   -> cancelled
+// confirmed -> completed
+// confirmed -> cancelled
+//
+// `completed` is used when a guest checks out.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function PATCH(
@@ -123,6 +153,10 @@ export async function PATCH(
 
     const { id } = await params;
 
+    // ───────────────────────────────────────────────────────────────────────
+    // Validate booking ID
+    // ───────────────────────────────────────────────────────────────────────
+
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
         {
@@ -133,26 +167,109 @@ export async function PATCH(
       );
     }
 
-    const { status } = await req.json();
+    const body = await req.json();
+    const status = body.status as BookingStatus;
 
-    if (
-      !["pending", "confirmed", "cancelled"].includes(status)
-    ) {
+    // ───────────────────────────────────────────────────────────────────────
+    // Validate status
+    // ───────────────────────────────────────────────────────────────────────
+
+    const allowedStatuses: BookingStatus[] = [
+      "pending",
+      "confirmed",
+      "cancelled",
+      "completed",
+    ];
+
+    if (!allowedStatuses.includes(status)) {
       return NextResponse.json(
         {
           success: false,
-          message: "Invalid status",
+          message:
+            "Invalid status. Allowed values are pending, confirmed, cancelled, completed.",
         },
         { status: 400 }
       );
     }
 
-    // ─── Update booking and populate related documents ───────────────────────
+    // ───────────────────────────────────────────────────────────────────────
+    // First find the booking so we know its current status
+    // ───────────────────────────────────────────────────────────────────────
+
+    const existingBooking = await Booking.findById(id);
+
+    if (!existingBooking) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Booking not found",
+        },
+        { status: 404 }
+      );
+    }
+
+    const previousStatus = existingBooking.status;
+
+    // ───────────────────────────────────────────────────────────────────────
+    // Prevent invalid status transitions
+    // ───────────────────────────────────────────────────────────────────────
+
+    if (
+      previousStatus === "cancelled" &&
+      status !== "cancelled"
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "A cancelled booking cannot be changed to another status.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (
+      previousStatus === "completed" &&
+      status !== "completed"
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "A completed booking cannot be changed to another status.",
+        },
+        { status: 400 }
+      );
+    }
+
+    // A booking must be confirmed before it can be completed.
+    if (
+      status === "completed" &&
+      previousStatus !== "confirmed"
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Only a confirmed booking can be marked as completed.",
+        },
+        { status: 400 }
+      );
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    // Update booking and populate related documents
+    // ───────────────────────────────────────────────────────────────────────
 
     const updated = await Booking.findByIdAndUpdate(
       id,
-      { status },
-      { new: true }
+      {
+        status,
+      },
+      {
+        new: true,
+        runValidators: true,
+      }
     )
       .populate<{
         unit: PopulatedUnit | null;
@@ -162,7 +279,7 @@ export async function PATCH(
       }>("room", "label pricePerNight images")
       .populate<{
         tenant: PopulatedTenant;
-      }>("tenant", "name email");
+      }>("tenant", "name email phone");
 
     if (!updated) {
       return NextResponse.json(
@@ -174,7 +291,16 @@ export async function PATCH(
       );
     }
 
-    // ─── Update room occupancy pointer ──────────────────────────────────────
+    // ───────────────────────────────────────────────────────────────────────
+    // Update room occupancy
+    //
+    // confirmed = currently assigned
+    // cancelled/completed = no longer assigned
+    //
+    // IMPORTANT:
+    // This does NOT affect the check-in/check-out calculations.
+    // Those are based on moveInDate and moveOutDate.
+    // ───────────────────────────────────────────────────────────────────────
 
     if (
       updated.rentalType === "short_term" &&
@@ -191,7 +317,12 @@ export async function PATCH(
             currentTenant: updated.tenant._id,
           }
         );
-      } else if (status === "cancelled") {
+      }
+
+      if (
+        status === "cancelled" ||
+        status === "completed"
+      ) {
         await Room.findByIdAndUpdate(
           updated.room._id,
           {
@@ -201,7 +332,9 @@ export async function PATCH(
       }
     }
 
-    // ─── Listing and guest information ──────────────────────────────────────
+    // ───────────────────────────────────────────────────────────────────────
+    // Listing information
+    // ───────────────────────────────────────────────────────────────────────
 
     const listingName =
       updated.unit?.title ??
@@ -214,7 +347,7 @@ export async function PATCH(
 
     const moveInFmt = new Date(
       updated.moveInDate
-    ).toLocaleDateString("en-US", {
+    ).toLocaleDateString("en-KE", {
       day: "numeric",
       month: "short",
       year: "numeric",
@@ -222,15 +355,21 @@ export async function PATCH(
 
     const moveOutFmt = new Date(
       updated.moveOutDate
-    ).toLocaleDateString("en-US", {
+    ).toLocaleDateString("en-KE", {
       day: "numeric",
       month: "short",
       year: "numeric",
     });
 
-    // ─── Confirmed ───────────────────────────────────────────────────────────
+    // ───────────────────────────────────────────────────────────────────────
+    // CONFIRMED
+    // ───────────────────────────────────────────────────────────────────────
 
-    if (status === "confirmed") {
+    if (
+      status === "confirmed" &&
+      previousStatus !== "confirmed"
+    ) {
+      // Notify the user whose booking was confirmed.
       await createNotification({
         userId: updated.tenant._id,
         type: "booking_confirmed",
@@ -241,6 +380,7 @@ export async function PATCH(
         refModel: "Booking",
       });
 
+      // Notify admins and staff.
       const staffPayload = {
         type: "booking_confirmed" as const,
         title: "Booking Confirmed ✅",
@@ -259,9 +399,14 @@ export async function PATCH(
       });
     }
 
-    // ─── Cancelled ──────────────────────────────────────────────────────────
+    // ───────────────────────────────────────────────────────────────────────
+    // CANCELLED
+    // ───────────────────────────────────────────────────────────────────────
 
-    else if (status === "cancelled") {
+    else if (
+      status === "cancelled" &&
+      previousStatus !== "cancelled"
+    ) {
       await createNotification({
         userId: updated.tenant._id,
         type: "booking_cancelled",
@@ -289,6 +434,50 @@ export async function PATCH(
         link: "/staff/bookings",
       });
     }
+
+    // ───────────────────────────────────────────────────────────────────────
+    // COMPLETED
+    //
+    // This is what your Check-out button should eventually call.
+    // ───────────────────────────────────────────────────────────────────────
+
+    else if (
+      status === "completed" &&
+      previousStatus === "confirmed"
+    ) {
+      // Notify the guest that the stay has been completed.
+      await createNotification({
+        userId: updated.tenant._id,
+        type: "general",
+        title: "Stay Completed ✅",
+        message: `Your stay at ${listingName} from ${moveInFmt} to ${moveOutFmt} has been completed. Thank you for staying with us!`,
+        link: "/trips",
+        refId: updated._id,
+        refModel: "Booking",
+      });
+
+      // Notify admins.
+      await notifyAdmins({
+        type: "general",
+        title: "Guest Checked Out ✅",
+        message: `${guestName} has checked out from ${listingName}. Stay: ${moveInFmt} to ${moveOutFmt}.`,
+        link: "/admin/bookings",
+        refId: updated._id,
+      });
+
+      // Notify relevant staff.
+      await notifyStaff({
+        type: "general",
+        title: "Guest Checked Out ✅",
+        message: `${guestName} has checked out from ${listingName}. Stay: ${moveInFmt} to ${moveOutFmt}.`,
+        link: "/staff/bookings",
+        refId: updated._id,
+      });
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    // Return updated booking
+    // ───────────────────────────────────────────────────────────────────────
 
     return NextResponse.json({
       success: true,
@@ -328,6 +517,10 @@ export async function GET(
 
     const { id } = await params;
 
+    // ───────────────────────────────────────────────────────────────────────
+    // Validate booking ID
+    // ───────────────────────────────────────────────────────────────────────
+
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
         {
@@ -338,6 +531,10 @@ export async function GET(
       );
     }
 
+    // ───────────────────────────────────────────────────────────────────────
+    // Fetch booking
+    // ───────────────────────────────────────────────────────────────────────
+
     const booking = await Booking.findById(id)
       .populate<{
         unit: PopulatedUnit | null;
@@ -347,7 +544,7 @@ export async function GET(
       }>("room", "label pricePerNight images")
       .populate<{
         tenant: PopulatedTenant;
-      }>("tenant", "name email");
+      }>("tenant", "name email phone");
 
     if (!booking) {
       return NextResponse.json(

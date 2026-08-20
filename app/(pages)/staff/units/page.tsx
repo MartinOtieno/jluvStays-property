@@ -1,33 +1,40 @@
-// room-booking/app/(pages)/admin/rooms/page.tsx
+// room-booking/app/(pages)/admin/units/page.tsx
 
 "use client";
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 
-interface Room {
-  _id: string;
-  unit: { _id: string; title: string } | string;
-  label: string;
-  description: string;
-  pricePerNight: number;
-  furnished: boolean;
-  images: string[];
-  status: "active" | "inactive";
-}
+type RentalType = "long_term" | "mid_term" | "short_term";
 
-interface UnitOption {
+interface Unit {
   _id: string;
   title: string;
+  description: string;
+  rentalType: RentalType;
+  bedrooms: number;
+  pricePerMonth?: number;
+  furnished?: boolean;
+  images: string[];
+  amenities: string[];
+  status: "active" | "inactive" | "archived";
 }
 
+const RENTAL_TYPE_LABEL: Record<RentalType, string> = {
+  long_term: "Long Term",
+  mid_term: "Mid Term",
+  short_term: "Short Term",
+};
+
 const emptyForm = {
-  unit: "",
-  label: "",
+  title: "",
   description: "",
-  pricePerNight: "",
-  furnished: true,
-  status: "active" as "active" | "inactive",
+  rentalType: "long_term" as RentalType,
+  bedrooms: "2",
+  pricePerMonth: "",
+  furnished: false,
+  amenities: "",
+  status: "active" as "active" | "inactive" | "archived",
 };
 
 interface ImageEntry {
@@ -37,12 +44,11 @@ interface ImageEntry {
 
 const emptyImageEntry: ImageEntry = { url: "", preview: "" };
 
-export default function AdminRoomsPage() {
-  const [rooms, setRooms] = useState<Room[]>([]);
-  const [units, setUnits] = useState<UnitOption[]>([]);
+export default function AdminUnitsPage() {
+  const [units, setUnits] = useState<Unit[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [editingRoom, setEditingRoom] = useState<Room | null>(null);
+  const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [images, setImages] = useState<ImageEntry[]>([{ ...emptyImageEntry }]);
   const [saving, setSaving] = useState(false);
@@ -52,33 +58,44 @@ export default function AdminRoomsPage() {
   const [error, setError] = useState("");
   const fileRefs = useRef<(HTMLInputElement | null)[]>([]);
 
+  const [buildingAddress, setBuildingAddress] = useState("");
+
   useEffect(() => {
-    loadRooms();
     loadUnits();
+    loadBuildingAddress();
   }, []);
 
-  const loadRooms = async () => {
+  const loadUnits = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/rooms?status=active");
+      // status=all bypasses the GET route's default "active"-only filter —
+      // admins need to see inactive/archived units too.
+      const res = await fetch("/api/units?status=all");
       const data = await res.json();
-      if (data.success) setRooms(data.data);
+      if (data.success) setUnits(data.data);
     } catch {
-      setError("Failed to load rooms.");
+      setError("Failed to load units.");
     } finally {
       setLoading(false);
     }
   };
 
-  // Rooms only ever belong to short_term units — that's the only
-  // rentalType a Room's parent Unit can have in this schema.
-  const loadUnits = async () => {
+  const loadBuildingAddress = async () => {
     try {
-      const res = await fetch("/api/units?rentalType=short_term");
+      const res = await fetch("/api/property-settings");
       const data = await res.json();
-      if (data.success) setUnits(data.data);
+      // Adjust this line if your /api/property-settings response shape
+      // differs from PropertySettings.address (street/estate/city/mapsUrl) —
+      // I'm assuming the standard { success, data } wrapper your other
+      // routes use, but haven't seen this route's actual response.
+      const address = data?.data?.address ?? data?.address;
+      if (address) {
+        setBuildingAddress(
+          [address.street, address.estate, address.city].filter(Boolean).join(", ")
+        );
+      }
     } catch {
-      // non-fatal — the unit dropdown just stays empty
+      // non-fatal — the address note just stays empty
     }
   };
 
@@ -103,11 +120,6 @@ export default function AdminRoomsPage() {
   };
 
   // ---------------- IMAGE UPLOAD ----------------
-  // NOTE: images are now stored as plain URL strings on Room (no per-photo
-  // label), so the label-picker UI from the old version is gone. If you
-  // want labeled photos back, that needs a schema change first
-  // (images: [{ url, label }] instead of images: [String]) — happy to add
-  // that if it's worth it to you.
   const handleImageUpload = async (file: File, index: number) => {
     setUploadingIndex(index);
 
@@ -154,30 +166,28 @@ export default function AdminRoomsPage() {
     });
   };
 
-  const addImageSlot = () => {
-    setImages((prev) => [...prev, { ...emptyImageEntry }]);
-  };
-
-  const removeImageSlot = (index: number) => {
+  const addImageSlot = () => setImages((prev) => [...prev, { ...emptyImageEntry }]);
+  const removeImageSlot = (index: number) =>
     setImages((prev) => prev.filter((_, i) => i !== index));
-  };
 
   // ---------------- HANDLE EDIT ----------------
-  const handleEdit = (room: Room) => {
-    setEditingRoom(room);
+  const handleEdit = (unit: Unit) => {
+    setEditingUnit(unit);
 
     setForm({
-      unit: typeof room.unit === "string" ? room.unit : room.unit._id,
-      label: room.label,
-      description: room.description || "",
-      pricePerNight: String(room.pricePerNight),
-      furnished: room.furnished,
-      status: room.status,
+      title: unit.title,
+      description: unit.description,
+      rentalType: unit.rentalType,
+      bedrooms: String(unit.bedrooms ?? 2),
+      pricePerMonth: unit.pricePerMonth ? String(unit.pricePerMonth) : "",
+      furnished: unit.furnished ?? false,
+      amenities: unit.amenities?.join(", ") || "",
+      status: unit.status,
     });
 
     setImages(
-      room.images?.length
-        ? room.images.map((url) => ({ url, preview: url }))
+      unit.images?.length
+        ? unit.images.map((url) => ({ url, preview: url }))
         : [{ ...emptyImageEntry }]
     );
 
@@ -186,29 +196,37 @@ export default function AdminRoomsPage() {
 
   // ---------------- SUBMIT ----------------
   const handleSubmit = async () => {
-    if (!form.label) return showMsg("Room label is required.", true);
-    if (!form.unit) return showMsg("Please assign this room to a unit.", true);
-    if (!form.pricePerNight) return showMsg("Price per night is required.", true);
+    if (!form.title) return showMsg("Title is required.", true);
+    if (!form.description) return showMsg("Description is required.", true);
+
+    const needsMonthlyPrice = form.rentalType === "long_term" || form.rentalType === "mid_term";
+    if (needsMonthlyPrice && !form.pricePerMonth) {
+      return showMsg("Price per month is required for Long/Mid Term units.", true);
+    }
 
     setSaving(true);
 
     const validImageUrls = images.map((img) => img.url).filter((url) => url.trim() !== "");
 
     const body = {
-      unit: form.unit,
-      label: form.label,
+      title: form.title,
       description: form.description,
-      pricePerNight: Number(form.pricePerNight),
-      furnished: form.furnished,
-      status: form.status,
+      rentalType: form.rentalType,
+      bedrooms: Number(form.bedrooms),
+      pricePerMonth: needsMonthlyPrice ? Number(form.pricePerMonth) : undefined,
+      // furnished only means anything for long/mid term — short_term
+      // furnishing lives on each Room instead.
+      furnished: form.rentalType !== "short_term" ? form.furnished : undefined,
+      amenities: form.amenities.split(",").map((a) => a.trim()).filter(Boolean),
       images: validImageUrls,
+      status: form.status,
     };
 
     try {
       const res = await fetch(
-        editingRoom ? `/api/rooms/${editingRoom._id}` : "/api/rooms",
+        editingUnit ? `/api/units/${editingUnit._id}` : "/api/units",
         {
-          method: editingRoom ? "PATCH" : "POST",
+          method: editingUnit ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         }
@@ -217,12 +235,12 @@ export default function AdminRoomsPage() {
       const data = await res.json();
 
       if (data.success) {
-        showMsg(editingRoom ? "Updated" : "Created");
+        showMsg(editingUnit ? "Updated" : "Created");
         setShowForm(false);
-        setEditingRoom(null);
+        setEditingUnit(null);
         setForm(emptyForm);
         setImages([{ ...emptyImageEntry }]);
-        loadRooms();
+        loadUnits();
       } else {
         showMsg(data.message || "Failed", true);
       }
@@ -231,16 +249,16 @@ export default function AdminRoomsPage() {
     }
   };
 
-  // DELETE now soft-deletes by default (sets status to "inactive" rather
-  // than removing the document), since Bookings reference rooms by ID.
+  // DELETE soft-deletes by default (status -> "archived"), matching
+  // /api/units/[id]'s behavior.
   const handleDelete = async (id: string) => {
-    if (!confirm("Deactivate this room? It will stop appearing in listings, but its booking history is kept.")) return;
+    if (!confirm("Archive this unit? It will stop appearing in listings, but its booking history is kept.")) return;
 
     setDeletingId(id);
 
     try {
-      await fetch(`/api/rooms/${id}`, { method: "DELETE" });
-      loadRooms();
+      await fetch(`/api/units/${id}`, { method: "DELETE" });
+      loadUnits();
     } finally {
       setDeletingId(null);
     }
@@ -248,26 +266,29 @@ export default function AdminRoomsPage() {
 
   const handleCancel = () => {
     setShowForm(false);
-    setEditingRoom(null);
+    setEditingUnit(null);
     setForm(emptyForm);
     setImages([{ ...emptyImageEntry }]);
   };
+
+  const showsMonthlyPrice = form.rentalType === "long_term" || form.rentalType === "mid_term";
+  const showsFurnished = form.rentalType !== "short_term";
 
   return (
     <div>
       {/* ── Header ── */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Rooms</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Units</h1>
           <p className="text-gray-500 text-sm mt-1">
-            {rooms.length} room{rooms.length !== 1 ? "s" : ""} total (Short Term only)
+            {units.length} propert{units.length !== 1 ? "ies" : "y"} total
           </p>
         </div>
         <button
           onClick={() => (showForm ? handleCancel() : setShowForm(true))}
           className="px-4 py-2 bg-[#7A1B0F] hover:opacity-90 text-white text-sm font-semibold rounded-xl transition"
         >
-          {showForm ? "✕ Cancel" : "+ Add Room"}
+          {showForm ? "✕ Cancel" : "+ Add Unit"}
         </button>
       </div>
 
@@ -283,22 +304,17 @@ export default function AdminRoomsPage() {
         </div>
       )}
 
-      {units.length === 0 && !loading && (
-        <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-xl text-yellow-800 text-sm">
-          ⚠️ No Short Term units found. A Room must belong to a Unit with rentalType
-          &quot;short_term&quot; — create one first before adding rooms.
-        </div>
-      )}
-
       {/* ── Form ── */}
       {showForm && (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 mb-8 overflow-hidden">
           <div className="bg-gray-50 border-b border-gray-100 px-6 py-4">
             <h2 className="text-lg font-bold text-gray-900">
-              {editingRoom ? "✏️ Edit Room" : "➕ Add New Room"}
+              {editingUnit ? "✏️ Edit Unit" : "➕ Add New Unit"}
             </h2>
             <p className="text-gray-500 text-sm mt-0.5">
-              {editingRoom ? "Update room details and images" : "Fill in the details to add a new room"}
+              {editingUnit
+                ? "Update unit details and images"
+                : "Fill in the details to add a new unit"}
             </p>
           </div>
 
@@ -306,86 +322,134 @@ export default function AdminRoomsPage() {
             {/* ── Basic Details ── */}
             <div>
               <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4">
-                Room Details
+                Unit Details
               </h3>
+              {buildingAddress && (
+                <p className="text-xs text-gray-400 mb-4">
+                  📍 All units are in the same building: {buildingAddress}
+                </p>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div className="md:col-span-2">
+                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Unit <span className="text-red-500">*</span>
+                    Title <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    name="title"
+                    value={form.title}
+                    onChange={handleChange}
+                    placeholder="Spacious 2BR Apartment"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#7A1B0F]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Rental Type <span className="text-red-500">*</span>
                   </label>
                   <select
-                    name="unit"
-                    value={form.unit}
+                    name="rentalType"
+                    value={form.rentalType}
                     onChange={handleChange}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#7A1B0F]"
+                    disabled={Boolean(editingUnit)}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#7A1B0F] disabled:bg-gray-100 disabled:text-gray-400"
                   >
-                    <option value="">Select a unit...</option>
-                    {units.map((p) => (
-                      <option key={p._id} value={p._id}>
-                        {p.title}
-                      </option>
-                    ))}
+                    <option value="long_term">Long Term</option>
+                    <option value="mid_term">Mid Term</option>
+                    <option value="short_term">Short Term</option>
                   </select>
-                  <p className="text-xs text-gray-400 mt-1">
-                    Which short-term unit this room belongs to.
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Room Label <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    name="label"
-                    value={form.label}
-                    onChange={handleChange}
-                    placeholder="Room A"
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#7A1B0F]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Price per Night ($) <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    name="pricePerNight"
-                    type="number"
-                    value={form.pricePerNight}
-                    onChange={handleChange}
-                    placeholder="45"
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#7A1B0F]"
-                  />
+                  {editingUnit && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      Rental type is fixed once a unit is created and can&apos;t be changed.
+                    </p>
+                  )}
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Description <span className="text-red-500">*</span>
+                  </label>
                   <textarea
                     name="description"
                     value={form.description}
                     onChange={handleChange}
-                    placeholder="Describe the room..."
+                    placeholder="Describe the unit..."
                     rows={3}
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#7A1B0F] resize-none"
                   />
                 </div>
 
-                <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-xl">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Bedrooms</label>
                   <input
-                    type="checkbox"
-                    name="furnished"
-                    id="furnished"
-                    checked={form.furnished}
+                    name="bedrooms"
+                    type="number"
+                    value={form.bedrooms}
                     onChange={handleChange}
-                    className="w-4 h-4 accent-[#7A1B0F]"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#7A1B0F]"
                   />
-                  <div>
-                    <label htmlFor="furnished" className="text-sm font-medium text-gray-700 cursor-pointer">
-                      Furnished
-                    </label>
-                    <p className="text-xs text-gray-400">Shown on the room&apos;s listing card</p>
-                  </div>
                 </div>
+
+                {showsMonthlyPrice && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Price per Month ($) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      name="pricePerMonth"
+                      type="number"
+                      value={form.pricePerMonth}
+                      onChange={handleChange}
+                      placeholder="1200"
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#7A1B0F]"
+                    />
+                  </div>
+                )}
+
+                {form.rentalType === "short_term" && (
+                  <div className="md:col-span-2 p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-700">
+                    Short Term units aren&apos;t priced or booked directly — pricing and
+                    booking happen per-room. Add rooms to this unit from the Rooms admin
+                    page once it&apos;s created.
+                  </div>
+                )}
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Amenities
+                    <span className="text-gray-400 font-normal ml-1">(comma separated)</span>
+                  </label>
+                  <input
+                    name="amenities"
+                    value={form.amenities}
+                    onChange={handleChange}
+                    placeholder="Free WiFi, Air Conditioning, Washer/Dryer"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#7A1B0F]"
+                  />
+                </div>
+
+                {showsFurnished && (
+                  <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-xl">
+                    <input
+                      type="checkbox"
+                      name="furnished"
+                      id="furnished"
+                      checked={form.furnished}
+                      onChange={handleChange}
+                      className="w-4 h-4 accent-[#7A1B0F]"
+                    />
+                    <div>
+                      <label htmlFor="furnished" className="text-sm font-medium text-gray-700 cursor-pointer">
+                        Furnished
+                      </label>
+                      <p className="text-xs text-gray-400">
+                        {form.rentalType === "long_term"
+                          ? "Long Term is usually unfurnished — check only if you're providing furniture"
+                          : "Mid Term is usually furnished by the host"}
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
@@ -397,11 +461,8 @@ export default function AdminRoomsPage() {
                   >
                     <option value="active">Active (visible in listings)</option>
                     <option value="inactive">Inactive (hidden)</option>
+                    <option value="archived">Archived</option>
                   </select>
-                  <p className="text-xs text-gray-400 mt-1">
-                    This controls listing visibility, not real-time occupancy — who&apos;s currently
-                    staying is tracked through bookings, not this field.
-                  </p>
                 </div>
               </div>
             </div>
@@ -411,9 +472,9 @@ export default function AdminRoomsPage() {
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
-                    Room Photos
+                    Unit Photos
                   </h3>
-                  <p className="text-xs text-gray-400 mt-0.5">Upload photos for this room</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Upload photos for this unit</p>
                 </div>
                 <button
                   type="button"
@@ -428,7 +489,6 @@ export default function AdminRoomsPage() {
                 {images.map((img, index) => (
                   <div key={index} className="border border-gray-200 rounded-2xl p-4 bg-gray-50">
                     <div className="flex items-start gap-4">
-                      {/* Preview */}
                       <div
                         className="relative w-28 h-28 flex-shrink-0 rounded-xl overflow-hidden border-2 border-dashed border-gray-300 cursor-pointer group hover:border-[#7A1B0F] transition"
                         onClick={() => fileRefs.current[index]?.click()}
@@ -437,7 +497,7 @@ export default function AdminRoomsPage() {
                           <>
                             <Image
                               src={img.preview}
-                              alt="Room photo"
+                              alt="Unit photo"
                               fill
                               sizes="112px"
                               className="object-cover"
@@ -474,7 +534,6 @@ export default function AdminRoomsPage() {
                         />
                       </div>
 
-                      {/* Controls */}
                       <div className="flex-1 space-y-3">
                         <div>
                           <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -488,7 +547,6 @@ export default function AdminRoomsPage() {
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#7A1B0F]"
                           />
                         </div>
-
                         {img.url && (
                           <p className="text-xs text-green-600 font-medium">✓ Photo added</p>
                         )}
@@ -530,10 +588,10 @@ export default function AdminRoomsPage() {
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                     Saving...
                   </>
-                ) : editingRoom ? (
-                  "💾 Update Room"
+                ) : editingUnit ? (
+                  "💾 Update Unit"
                 ) : (
-                  "➕ Create Room"
+                  "➕ Create Unit"
                 )}
               </button>
               <button
@@ -547,7 +605,7 @@ export default function AdminRoomsPage() {
         </div>
       )}
 
-      {/* ── Rooms Table ── */}
+      {/* ── Units Table ── */}
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
@@ -560,15 +618,15 @@ export default function AdminRoomsPage() {
             </div>
           ))}
         </div>
-      ) : rooms.length === 0 ? (
+      ) : units.length === 0 ? (
         <div className="text-center py-20 bg-white rounded-2xl border border-gray-100">
           <p className="text-4xl mb-3">🏠</p>
-          <p className="text-gray-500 mb-4">No rooms yet. Add your first room above.</p>
+          <p className="text-gray-500 mb-4">No units yet. Add your first unit above.</p>
           <button
             onClick={() => setShowForm(true)}
             className="px-6 py-2.5 bg-[#7A1B0F] text-white text-sm font-semibold rounded-xl hover:opacity-90 transition"
           >
-            + Add Room
+            + Add Unit
           </button>
         </div>
       ) : (
@@ -576,77 +634,74 @@ export default function AdminRoomsPage() {
           <table className="w-full">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="text-left px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Room</th>
                 <th className="text-left px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Unit</th>
+                <th className="text-left px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Type</th>
                 <th className="text-left px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Price</th>
-                <th className="text-left px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Furnished</th>
-                <th className="text-left px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Photos</th>
+                <th className="text-left px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Bedrooms</th>
                 <th className="text-left px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Status</th>
                 <th className="text-left px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {rooms.map((room) => (
-                <tr key={room._id} className="hover:bg-gray-50 transition">
+              {units.map((unit) => (
+                <tr key={unit._id} className="hover:bg-gray-50 transition">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
                       <div className="relative w-12 h-12 rounded-xl overflow-hidden flex-shrink-0">
-                        {room.images && room.images.length > 0 ? (
-                          <Image src={room.images[0]} alt={room.label || "Room photo"} fill sizes="48px" className="object-cover" />
+                        {unit.images && unit.images.length > 0 ? (
+                          <Image
+                            src={unit.images[0]}
+                            alt={unit.title || "Unit photo"}
+                            fill
+                            sizes="48px"
+                            className="object-cover"
+                          />
                         ) : (
                           <div className="w-full h-full bg-gray-200 flex items-center justify-center text-xl">🏠</div>
                         )}
                       </div>
-                      <p className="text-sm font-medium text-gray-900">{room.label || "Untitled room"}</p>
+                      <p className="text-sm font-medium text-gray-900">{unit.title || "Untitled unit"}</p>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-700">
-                    {typeof room.unit === "string" ? room.unit : room.unit?.title ?? "—"}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-700">${room.pricePerNight.toLocaleString()}/night</td>
-                  <td className="px-6 py-4 text-sm text-gray-700">{room.furnished ? "Yes" : "No"}</td>
                   <td className="px-6 py-4">
-                    {room.images && room.images.length > 0 ? (
-                      <div className="flex items-center gap-1.5">
-                        <div className="flex -space-x-2">
-                          {room.images.slice(0, 3).map((url, i) => (
-                            <div key={i} className="relative w-7 h-7 rounded-lg overflow-hidden border-2 border-white">
-                              <Image src={url} alt="Room photo" fill sizes="28px" className="object-cover" />
-                            </div>
-                          ))}
-                        </div>
-                        <span className="text-xs text-gray-500">
-                          {room.images.length} photo{room.images.length !== 1 ? "s" : ""}
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-gray-400">No photos</span>
-                    )}
+                    <span className="px-2 py-1 bg-[#7A1B0F]/10 text-[#7A1B0F] text-xs font-semibold rounded-full">
+                      {RENTAL_TYPE_LABEL[unit.rentalType]}
+                    </span>
                   </td>
+                  <td className="px-6 py-4 text-sm text-gray-700">
+                    {unit.rentalType === "short_term"
+                      ? "Priced per room"
+                      : `$${(unit.pricePerMonth ?? 0).toLocaleString()}/month`}
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-700">{unit.bedrooms}</td>
                   <td className="px-6 py-4">
                     <span
                       className={
                         "px-2 py-1 text-xs font-semibold rounded-full " +
-                        (room.status === "active" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")
+                        (unit.status === "active"
+                          ? "bg-green-100 text-green-700"
+                          : unit.status === "inactive"
+                          ? "bg-yellow-100 text-yellow-700"
+                          : "bg-gray-200 text-gray-600")
                       }
                     >
-                      {room.status === "active" ? "Active" : "Inactive"}
+                      {unit.status.charAt(0).toUpperCase() + unit.status.slice(1)}
                     </span>
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex gap-2">
                       <button
-                        onClick={() => handleEdit(room)}
+                        onClick={() => handleEdit(unit)}
                         className="px-3 py-1.5 text-xs border border-gray-300 text-gray-600 hover:bg-gray-50 rounded-lg transition font-medium"
                       >
                         ✏️ Edit
                       </button>
                       <button
-                        onClick={() => handleDelete(room._id)}
-                        disabled={deletingId === room._id}
+                        onClick={() => handleDelete(unit._id)}
+                        disabled={deletingId === unit._id}
                         className="px-3 py-1.5 text-xs border border-red-200 text-red-500 hover:bg-red-50 rounded-lg transition font-medium disabled:opacity-50"
                       >
-                        {deletingId === room._id ? "..." : "🗑️ Deactivate"}
+                        {deletingId === unit._id ? "..." : "🗑️ Archive"}
                       </button>
                     </div>
                   </td>

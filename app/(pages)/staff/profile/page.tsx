@@ -1,337 +1,991 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { useEffect, useRef, useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import toast, { Toaster } from "react-hot-toast";
 
-interface ProfileData {
-  name: string;
-  email: string;
-  phone: string;
-  gender: string;
-  photo: string;
+// ─── Icons ────────────────────────────────────────────────────────────────────
+
+const Icons = {
+  Save: () => (
+    <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z" />
+      <polyline points="17 21 17 13 7 13 7 21" />
+      <polyline points="7 3 7 8 15 8" />
+    </svg>
+  ),
+
+  Camera: () => (
+    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" />
+      <circle cx="12" cy="13" r="4" />
+    </svg>
+  ),
+
+  Eye: () => (
+    <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  ),
+
+  EyeOff: () => (
+    <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94" />
+      <path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19" />
+      <path d="M14.12 14.12a3 3 0 11-4.24-4.24" />
+      <line x1="1" y1="1" x2="23" y2="23" />
+    </svg>
+  ),
+
+  Lock: () => (
+    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <rect x="3" y="11" width="18" height="11" rx="2" />
+      <path d="M7 11V7a5 5 0 0110 0v4" />
+    </svg>
+  ),
+
+  User: () => (
+    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 20v-1a8 8 0 0116 0v1" />
+    </svg>
+  ),
+
+  Spinner: () => (
+    <svg
+      className="animate-spin"
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+    >
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+      />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8v8H4z"
+      />
+    </svg>
+  ),
+};
+
+// ─── Role labels ──────────────────────────────────────────────────────────────
+
+const ROLE_LABELS: Record<string, string> = {
+  admin: "Administrator",
+  property_manager: "Property Manager",
+  receptionist: "Receptionist",
+  caretaker: "Caretaker",
+  accountant: "Accountant",
+  security: "Security",
+  maintenance: "Maintenance",
+  tenant: "Tenant",
+  guest: "Guest",
+};
+
+// ─── Role colors ──────────────────────────────────────────────────────────────
+
+const ROLE_COLORS: Record<string, string> = {
+  admin: "bg-blue-100 text-blue-700",
+  property_manager: "bg-emerald-100 text-emerald-700",
+  receptionist: "bg-violet-100 text-violet-700",
+  caretaker: "bg-amber-100 text-amber-700",
+  accountant: "bg-rose-100 text-rose-700",
+  security: "bg-orange-100 text-orange-700",
+  maintenance: "bg-slate-100 text-slate-700",
+  tenant: "bg-slate-100 text-slate-700",
+  guest: "bg-slate-100 text-slate-700",
+};
+
+// ─── Password strength ────────────────────────────────────────────────────────
+
+function passwordStrength(pw: string) {
+  let score = 0;
+
+  if (pw.length >= 8) score++;
+  if (/[A-Z]/.test(pw)) score++;
+  if (/[0-9]/.test(pw)) score++;
+  if (/[^A-Za-z0-9]/.test(pw)) score++;
+
+  const map = [
+    {
+      label: "",
+      color: "bg-slate-200",
+    },
+    {
+      label: "Weak",
+      color: "bg-red-400",
+    },
+    {
+      label: "Fair",
+      color: "bg-amber-400",
+    },
+    {
+      label: "Good",
+      color: "bg-blue-400",
+    },
+    {
+      label: "Strong",
+      color: "bg-emerald-500",
+    },
+  ];
+
+  return {
+    score,
+    ...map[score],
+  };
 }
 
-export default function StaffProfilePage() {
-  const { data: session, update: updateSession } = useSession();
-  const fileRef = useRef<HTMLInputElement>(null);
+// ─── Password input ───────────────────────────────────────────────────────────
 
-  const [profile,      setProfile]      = useState<ProfileData | null>(null);
-  const [form,         setForm]         = useState({ name: "", phone: "", gender: "prefer_not_to_say" });
-  const [photoPreview, setPhotoPreview] = useState("");
-  const [photoFile,    setPhotoFile]    = useState<File | null>(null);
-  const [loading,      setLoading]      = useState(true);
-  const [saving,       setSaving]       = useState(false);
+function PasswordInput({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  const [show, setShow] = useState(false);
 
-  const [pwForm,   setPwForm]   = useState({ current: "", next: "", confirm: "" });
-  const [showPw,   setShowPw]   = useState({ current: false, next: false, confirm: false });
-  const [savingPw, setSavingPw] = useState(false);
+  return (
+    <div className="relative">
+      <input
+        type={show ? "text" : "password"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full border border-slate-200 rounded-xl px-3 py-2.5 pr-10 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#7A1B0F] focus:border-transparent"
+      />
 
-  const position = (session?.user as { role?: string })?.role ?? "";
+      <button
+        type="button"
+        onClick={() => setShow((s) => !s)}
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-[#7A1B0F] transition"
+        aria-label={show ? "Hide password" : "Show password"}
+      >
+        {show ? <Icons.EyeOff /> : <Icons.Eye />}
+      </button>
+    </div>
+  );
+}
 
-  const POSITION_LABELS: Record<string, string> = {
-    admin:            "Administrator",
-    property_manager: "Property Manager",
-    receptionist:     "Receptionist",
-    caretaker:        "Caretaker",
-    accountant:       "Accountant",
-    security:         "Security",
-    maintenance:      "Maintenance",
-  };
+// ─── Cloudinary upload ────────────────────────────────────────────────────────
 
-  // ── Load profile and pre-populate form ──────────────────────────────────────
-  useEffect(() => {
-    fetch("/api/profile")
-      .then(async r => {
-        const text = await r.text();
-        if (!text) throw new Error("Empty response from server.");
-        return JSON.parse(text);
-      })
-      .then(d => {
-        if (d.success) {
-          setProfile(d.data);
-          setForm({
-            name:   d.data.name   ?? "",
-            phone:  d.data.phone  ?? "",
-            gender: d.data.gender ?? "prefer_not_to_say",
-          });
-          setPhotoPreview(d.data.photo ?? "");
-        } else {
-          toast.error(d.message ?? "Failed to load profile");
-        }
-      })
-      .catch(e => toast.error(e.message ?? "Failed to load profile"))
-      .finally(() => setLoading(false));
-  }, []);
+async function uploadToCloudinary(file: File): Promise<string> {
+  const formData = new FormData();
 
-  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { toast.error("Photo must be under 5 MB."); return; }
-    if (!file.type.startsWith("image/")) { toast.error("Please select an image file."); return; }
-    setPhotoFile(file);
-    setPhotoPreview(URL.createObjectURL(file));
-  };
+  formData.append("file", file);
+  formData.append(
+    "upload_preset",
+    process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET ?? ""
+  );
+  formData.append("folder", "jluvstays/profiles");
 
-  const uploadPhoto = async (file: File): Promise<string> => {
-    const data = new FormData();
-    data.append("file", file);
-    data.append("upload_preset", process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET ?? "");
-    data.append("folder", "jluvstays/profiles");
-    const res = await fetch(
-      `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`,
-      { method: "POST", body: data }
-    );
-    if (!res.ok) throw new Error("Upload failed");
-    return (await res.json()).secure_url as string;
-  };
-
-  const handleSaveProfile = async () => {
-    if (!form.name.trim()) { toast.error("Name is required."); return; }
-    setSaving(true);
-    try {
-      let photoUrl = profile?.photo ?? "";
-      if (photoFile) {
-        try { photoUrl = await uploadPhoto(photoFile); }
-        catch { toast.error("Photo upload failed. Saving without photo update."); }
-      }
-      const res  = await fetch("/api/profile", {
-        method:  "PUT",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ ...form, photo: photoUrl }),
-      });
-      const text = await res.text();
-      if (!text) throw new Error("Server returned an empty response.");
-      const data = JSON.parse(text);
-      if (!data.success) throw new Error(data.message);
-      setProfile(prev => prev ? { ...prev, ...form, photo: photoUrl } : prev);
-      await updateSession({ name: form.name });
-      toast.success("Profile updated.");
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Failed to save profile.");
-    } finally {
-      setSaving(false);
+  const res = await fetch(
+    `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`,
+    {
+      method: "POST",
+      body: formData,
     }
-  };
-
-  const handleChangePassword = async () => {
-    if (!pwForm.current || !pwForm.next || !pwForm.confirm) {
-      toast.error("All password fields are required.");
-      return;
-    }
-    if (pwForm.next !== pwForm.confirm) {
-      toast.error("New passwords do not match.");
-      return;
-    }
-    if (pwForm.next.length < 8) {
-      toast.error("Password must be at least 8 characters.");
-      return;
-    }
-    setSavingPw(true);
-    try {
-      const res  = await fetch("/api/profile/password", {
-        method:  "PUT",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ currentPassword: pwForm.current, newPassword: pwForm.next }),
-      });
-      const text = await res.text();
-      if (!text) throw new Error("Server returned an empty response.");
-      const data = JSON.parse(text);
-      if (!data.success) throw new Error(data.message);
-      toast.success("Password changed. A confirmation email has been sent.");
-      setPwForm({ current: "", next: "", confirm: "" });
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Failed to change password.");
-    } finally {
-      setSavingPw(false);
-    }
-  };
-
-  const EyeToggle = ({ field }: { field: keyof typeof showPw }) => (
-    <button
-      type="button"
-      onClick={() => setShowPw(p => ({ ...p, [field]: !p[field] }))}
-      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition"
-    >
-      {showPw[field] ? (
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-        </svg>
-      ) : (
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-        </svg>
-      )}
-    </button>
   );
 
-  const inputCls = "w-full px-4 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-400 bg-white text-slate-800";
-  const labelCls = "block text-sm font-medium text-slate-700 mb-1.5";
+  if (!res.ok) {
+    throw new Error("Photo upload failed");
+  }
 
-  if (loading) {
+  return (await res.json()).secure_url as string;
+}
+
+// ─── Safe JSON fetch ──────────────────────────────────────────────────────────
+
+async function safeFetch(url: string, options?: RequestInit) {
+  const res = await fetch(url, options);
+  const text = await res.text();
+
+  if (!text) {
+    throw new Error("Server returned an empty response.");
+  }
+
+  return {
+    res,
+    data: JSON.parse(text),
+  };
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
+export default function ProfilePage() {
+  const { data: session, update: updateSession } = useSession();
+
+  const user = session?.user as
+    | {
+        id?: string;
+        name?: string;
+        email?: string;
+        role?: string;
+        image?: string;
+        phone?: string;
+      }
+    | undefined;
+
+  // ── Profile state ────────────────────────────────────────────────────────
+
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [gender, setGender] = useState("prefer_not_to_say");
+  const [email, setEmail] = useState("");
+
+  const [photoPreview, setPhotoPreview] = useState("");
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(true);
+
+  // ── Password state ───────────────────────────────────────────────────────
+
+  const [currentPw, setCurrentPw] = useState("");
+  const [newPw, setNewPw] = useState("");
+  const [confirmPw, setConfirmPw] = useState("");
+  const [pwSaving, setPwSaving] = useState(false);
+
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // ── Load profile ─────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    fetch("/api/profile")
+      .then(async (r) => {
+        const text = await r.text();
+
+        if (!text) {
+          throw new Error("Empty response from server.");
+        }
+
+        return JSON.parse(text);
+      })
+      .then((d) => {
+        if (d.success) {
+          const p = d.data;
+
+          setName(p.name ?? "");
+          setPhone(p.phone ?? "");
+          setGender(p.gender ?? "prefer_not_to_say");
+          setEmail(p.email ?? "");
+          setPhotoPreview(p.photo ?? "");
+        } else {
+          toast.error(d.message ?? "Failed to load your profile.");
+        }
+      })
+      .catch((e) =>
+        toast.error(e.message ?? "Failed to load your profile.")
+      )
+      .finally(() => setLoadingProfile(false));
+  }, []);
+
+  // ── Photo selection ──────────────────────────────────────────────────────
+
+  function handleAvatarChange(
+    e: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const file = e.target.files?.[0];
+
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Profile photo must be under 5 MB.");
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select a valid image file.");
+      return;
+    }
+
+    setPhotoFile(file);
+    setPhotoPreview(URL.createObjectURL(file));
+  }
+
+  // ── Save profile ─────────────────────────────────────────────────────────
+
+  async function saveProfile() {
+    if (!name.trim()) {
+      toast.error("Please enter your full name.");
+      return;
+    }
+
+    setProfileSaving(true);
+
+    let photoUrl = photoPreview;
+
+    try {
+      if (photoFile) {
+        setPhotoUploading(true);
+
+        try {
+          photoUrl = await uploadToCloudinary(photoFile);
+          setPhotoFile(null);
+        } catch {
+          toast.error(
+            "Your photo could not be uploaded. Your other profile changes will still be saved."
+          );
+        } finally {
+          setPhotoUploading(false);
+        }
+      }
+
+      const { data } = await safeFetch("/api/profile", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: name.trim(),
+          phone: phone.trim(),
+          gender,
+          photo: photoUrl,
+        }),
+      });
+
+      if (!data.success) {
+        throw new Error(data.message ?? "Failed to save profile.");
+      }
+
+      setPhotoPreview(photoUrl);
+
+      await updateSession({
+        name: name.trim(),
+        image: photoUrl,
+      });
+
+      toast.success("Your profile has been updated successfully.");
+    } catch (e: unknown) {
+      toast.error(
+        e instanceof Error
+          ? e.message
+          : "Failed to update your profile."
+      );
+    } finally {
+      setProfileSaving(false);
+    }
+  }
+
+  // ── Change password ─────────────────────────────────────────────────────
+
+  async function changePassword() {
+    if (!currentPw) {
+      toast.error("Please enter your current password.");
+      return;
+    }
+
+    if (newPw.length < 8) {
+      toast.error("Your new password must be at least 8 characters.");
+      return;
+    }
+
+    if (newPw !== confirmPw) {
+      toast.error("Your new passwords do not match.");
+      return;
+    }
+
+    setPwSaving(true);
+
+    try {
+      const { data } = await safeFetch("/api/profile/password", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          currentPassword: currentPw,
+          newPassword: newPw,
+        }),
+      });
+
+      if (!data.success) {
+        throw new Error(
+          data.message ?? "Failed to change your password."
+        );
+      }
+
+      setCurrentPw("");
+      setNewPw("");
+      setConfirmPw("");
+
+      toast.success(
+        "Password changed successfully. A confirmation email has been sent to " +
+          email
+      );
+    } catch (e: unknown) {
+      toast.error(
+        e instanceof Error
+          ? e.message
+          : "Failed to change your password."
+      );
+    } finally {
+      setPwSaving(false);
+    }
+  }
+
+  // ── Derived values ───────────────────────────────────────────────────────
+
+  const strength = passwordStrength(newPw);
+
+  const role = user?.role ?? "guest";
+
+  const initials =
+    name
+      .split(" ")
+      .filter(Boolean)
+      .map((w) => w[0])
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() || "?";
+
+  const avatarBg = [
+    "bg-blue-500",
+    "bg-violet-500",
+    "bg-emerald-500",
+  ][(name.charCodeAt(0) ?? 0) % 3];
+
+  // Main input style
+  const inputCls =
+    "w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#7A1B0F] focus:border-[#7A1B0F] bg-white";
+
+  // Disabled input style
+  const disabledCls =
+    "w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-600 cursor-not-allowed";
+
+  if (loadingProfile) {
     return (
       <div className="flex justify-center py-20">
-        <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-[#7A1B0F] border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   return (
-    <>
-      <Toaster position="top-center" toastOptions={{
-        style: { borderRadius: "10px", background: "#1e293b", color: "#f8fafc", fontSize: "14px" },
-      }} />
+    <div className="space-y-6 max-w-2xl">
+      <Toaster
+        position="top-center"
+        toastOptions={{
+          style: {
+            borderRadius: "10px",
+            background: "#1e293b",
+            color: "#f8fafc",
+            fontSize: "14px",
+          },
+          success: {
+            iconTheme: {
+              primary: "#22c55e",
+              secondary: "#fff",
+            },
+          },
+          error: {
+            iconTheme: {
+              primary: "#ef4444",
+              secondary: "#fff",
+            },
+          },
+        }}
+      />
 
-      <div className="max-w-2xl space-y-6">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-900">My Profile</h1>
-          <p className="text-slate-500 text-sm mt-1">Update your personal details and password.</p>
-        </div>
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      {/* Header */}
+      {/* ─────────────────────────────────────────────────────────────────── */}
 
-        {/* Profile card */}
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-5">
-          <h2 className="font-semibold text-slate-800">Personal details</h2>
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900">
+          My Profile
+        </h1>
 
-          {/* Photo */}
-          <div className="flex items-center gap-5">
-            <div
-              onClick={() => fileRef.current?.click()}
-              className="relative w-20 h-20 rounded-full overflow-hidden bg-violet-100 flex items-center justify-center cursor-pointer group flex-shrink-0"
-            >
-              {photoPreview ? (
-                <Image src={photoPreview} alt="Photo" fill className="object-cover" />
-              ) : (
-                <span className="text-3xl font-bold text-violet-500">
-                  {form.name?.charAt(0).toUpperCase() ?? "?"}
-                </span>
-              )}
-              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
-                <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </div>
-            </div>
-            <div>
-              <p className="font-semibold text-slate-800">{form.name}</p>
-              <p className="text-sm text-slate-500">{POSITION_LABELS[position] ?? position}</p>
-              <button
-                onClick={() => fileRef.current?.click()}
-                className="text-xs text-violet-600 hover:text-violet-700 mt-1"
-              >
-                Change photo
-              </button>
-              <input ref={fileRef} type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" />
-            </div>
+        <p className="text-slate-600 text-sm mt-1">
+          Manage your personal information, profile photo, password, and
+          account details.
+        </p>
+      </div>
+
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      {/* Personal Information */}
+      {/* ─────────────────────────────────────────────────────────────────── */}
+
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+        <div className="flex items-center gap-3 mb-6 pb-6 border-b border-slate-100">
+          <div className="w-9 h-9 rounded-xl bg-[#7A1B0F]/10 text-[#7A1B0F] flex items-center justify-center">
+            <Icons.User />
           </div>
 
-          {/* Fields */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="sm:col-span-2">
-              <label className={labelCls}>Full name</label>
-              <input
-                type="text"
-                value={form.name}
-                onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
-                className={inputCls}
-              />
-            </div>
-            <div>
-              <label className={labelCls}>Email</label>
-              <input
-                type="email"
-                value={profile?.email ?? ""}
-                disabled
-                className={`${inputCls} bg-slate-50 text-slate-400 cursor-not-allowed`}
-              />
-            </div>
-            <div>
-              <label className={labelCls}>Phone</label>
-              <input
-                type="tel"
-                value={form.phone}
-                onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}
-                placeholder="+254 7XX XXX XXX"
-                className={inputCls}
-              />
-            </div>
-            <div>
-              <label className={labelCls}>Gender</label>
-              <select
-                value={form.gender}
-                onChange={e => setForm(p => ({ ...p, gender: e.target.value }))}
-                className={inputCls}
-              >
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-                <option value="other">Other</option>
-                <option value="prefer_not_to_say">Prefer not to say</option>
-              </select>
-            </div>
-          </div>
-
-          <button
-            onClick={handleSaveProfile}
-            disabled={saving}
-            className="px-6 py-2.5 bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold rounded-xl transition disabled:opacity-60 flex items-center gap-2"
-          >
-            {saving && (
-              <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-              </svg>
-            )}
-            {saving ? "Saving…" : "Save changes"}
-          </button>
-        </div>
-
-        {/* Password card */}
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-5">
           <div>
-            <h2 className="font-semibold text-slate-800">Change password</h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              A confirmation email will be sent to {profile?.email} after changing.
+            <h2 className="font-semibold text-slate-900">
+              Personal Information
+            </h2>
+
+            <p className="text-xs text-slate-600 mt-0.5">
+              Update the information associated with your account.
+            </p>
+          </div>
+        </div>
+
+        {/* ── Profile Photo ─────────────────────────────────────────────── */}
+
+        <div className="mb-7">
+          <div className="flex items-center gap-5">
+            <div className="relative flex-shrink-0">
+              <div
+                className={`w-20 h-20 rounded-2xl overflow-hidden flex items-center justify-center ${
+                  photoPreview ? "" : avatarBg
+                }`}
+              >
+                {photoPreview ? (
+                  <Image
+                    src={photoPreview}
+                    alt="Profile photo"
+                    width={80}
+                    height={80}
+                    sizes="80px"
+                    className="object-cover w-full h-full"
+                    unoptimized={photoPreview.startsWith("blob:")}
+                  />
+                ) : (
+                  <span className="text-white text-2xl font-bold">
+                    {initials}
+                  </span>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                className="absolute -bottom-1 -right-1 w-7 h-7 bg-[#7A1B0F] hover:opacity-90 text-white rounded-full flex items-center justify-center shadow-md transition"
+                title="Change profile photo"
+              >
+                <Icons.Camera />
+              </button>
+
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                onChange={handleAvatarChange}
+                className="hidden"
+              />
+            </div>
+
+            <div>
+              <p className="font-semibold text-slate-900">
+                {name || "Your Name"}
+              </p>
+
+              <p className="text-slate-600 text-sm mt-0.5">
+                {email}
+              </p>
+
+              <span
+                className={`inline-block mt-2 px-2.5 py-1 text-[11px] font-semibold rounded-full ${
+                  ROLE_COLORS[role] ?? ROLE_COLORS.guest
+                }`}
+              >
+                {ROLE_LABELS[role] ?? role}
+              </span>
+
+              {photoFile && (
+                <p className="text-xs text-[#7A1B0F] font-medium mt-2">
+                  New photo selected. Save your profile to upload it.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <p className="text-xs text-slate-600 mt-3">
+            Choose a clear profile photo. The image must be less than 5 MB.
+          </p>
+        </div>
+
+        {/* ── Fields ────────────────────────────────────────────────────── */}
+
+        <div className="space-y-5">
+          {/* Full name */}
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-900 mb-1.5">
+              Full Name
+            </label>
+
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Enter your full name"
+              className={inputCls}
+            />
+
+            <p className="text-[11px] text-slate-600 mt-1.5">
+              Enter your name as you would like it to appear throughout the
+              platform.
             </p>
           </div>
 
-          <div className="space-y-4">
-            {([
-              { field: "current" as const, label: "Current password",     placeholder: "Enter current password"  },
-              { field: "next"    as const, label: "New password",          placeholder: "Min. 8 characters"        },
-              { field: "confirm" as const, label: "Confirm new password",  placeholder: "Re-enter new password"   },
-            ]).map(({ field, label, placeholder }) => (
-              <div key={field}>
-                <label className={labelCls}>{label}</label>
-                <div className="relative">
-                  <input
-                    type={showPw[field] ? "text" : "password"}
-                    value={pwForm[field]}
-                    onChange={e => setPwForm(p => ({ ...p, [field]: e.target.value }))}
-                    placeholder={placeholder}
-                    className={`${inputCls} pr-10`}
-                  />
-                  <EyeToggle field={field} />
-                </div>
-              </div>
-            ))}
+          {/* Email */}
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-900 mb-1.5">
+              Email Address
+            </label>
+
+            <input
+              value={email}
+              disabled
+              className={disabledCls}
+            />
+
+            <p className="text-[11px] text-slate-600 mt-1.5">
+              Your email identifies your account and cannot be changed here.
+              Contact an administrator if you need to update it.
+            </p>
           </div>
 
-          <button
-            onClick={handleChangePassword}
-            disabled={savingPw}
-            className="px-6 py-2.5 bg-slate-800 hover:bg-slate-700 text-white text-sm font-semibold rounded-xl transition disabled:opacity-60 flex items-center gap-2"
-          >
-            {savingPw && (
-              <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-              </svg>
-            )}
-            {savingPw ? "Updating…" : "Update password"}
-          </button>
+          {/* Phone */}
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-900 mb-1.5">
+              Phone Number
+            </label>
+
+            <input
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="+254 7XX XXX XXX"
+              className={inputCls}
+            />
+
+            <p className="text-[11px] text-slate-600 mt-1.5">
+              Add a phone number where you can be reached for important
+              account or booking-related communication.
+            </p>
+          </div>
+
+          {/* Gender */}
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-900 mb-1.5">
+              Gender
+            </label>
+
+            <select
+              value={gender}
+              onChange={(e) => setGender(e.target.value)}
+              className={inputCls}
+            >
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other</option>
+              <option value="prefer_not_to_say">
+                Prefer not to say
+              </option>
+            </select>
+
+            <p className="text-[11px] text-slate-600 mt-1.5">
+              Select the option that best represents your preference.
+            </p>
+          </div>
+
+          {/* Role */}
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-900 mb-1.5">
+              Account Role
+            </label>
+
+            <input
+              value={ROLE_LABELS[role] ?? role}
+              disabled
+              className={disabledCls}
+            />
+
+            <p className="text-[11px] text-slate-600 mt-1.5">
+              Your role determines which areas of the platform you can
+              access. Only an administrator can change your role.
+            </p>
+          </div>
+
+          {/* Save */}
+
+          <div className="flex justify-end pt-2">
+            <button
+              type="button"
+              onClick={saveProfile}
+              disabled={profileSaving || photoUploading}
+              className="flex items-center gap-2 px-5 py-2.5 bg-[#7A1B0F] hover:opacity-90 text-white text-sm font-semibold rounded-xl transition shadow-sm shadow-[#7A1B0F]/20 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {profileSaving || photoUploading ? (
+                <Icons.Spinner />
+              ) : (
+                <Icons.Save />
+              )}
+
+              {photoUploading
+                ? "Uploading Photo..."
+                : profileSaving
+                ? "Saving..."
+                : "Save Profile"}
+            </button>
+          </div>
         </div>
       </div>
-    </>
+
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      {/* Change Password */}
+      {/* ─────────────────────────────────────────────────────────────────── */}
+
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+        <div className="flex items-center gap-3 mb-2 pb-6 border-b border-slate-100">
+          <div className="w-9 h-9 rounded-xl bg-[#7A1B0F]/10 text-[#7A1B0F] flex items-center justify-center">
+            <Icons.Lock />
+          </div>
+
+          <div>
+            <h2 className="font-semibold text-slate-900">
+              Change Password
+            </h2>
+
+            <p className="text-xs text-slate-600 mt-0.5">
+              Keep your account secure by regularly using a strong password.
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-5 mt-6">
+          {/* Current password */}
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-900 mb-1.5">
+              Current Password
+            </label>
+
+            <PasswordInput
+              value={currentPw}
+              onChange={setCurrentPw}
+              placeholder="Enter your current password"
+            />
+          </div>
+
+          {/* New password */}
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-900 mb-1.5">
+              New Password
+            </label>
+
+            <PasswordInput
+              value={newPw}
+              onChange={setNewPw}
+              placeholder="Enter a new password"
+            />
+
+            {newPw && (
+              <div className="mt-2 space-y-1">
+                <div className="flex gap-1">
+                  {[1, 2, 3, 4].map((i) => (
+                    <div
+                      key={i}
+                      className={`h-1 flex-1 rounded-full transition-all ${
+                        i <= strength.score
+                          ? strength.color
+                          : "bg-slate-200"
+                      }`}
+                    />
+                  ))}
+                </div>
+
+                <p className="text-xs text-slate-600">
+                  {strength.label &&
+                    `Password strength: ${strength.label}`}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Confirm password */}
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-900 mb-1.5">
+              Confirm New Password
+            </label>
+
+            <PasswordInput
+              value={confirmPw}
+              onChange={setConfirmPw}
+              placeholder="Enter the new password again"
+            />
+
+            {confirmPw && newPw !== confirmPw && (
+              <p className="text-xs text-red-600 font-medium mt-1.5">
+                The passwords do not match.
+              </p>
+            )}
+
+            {confirmPw && newPw === confirmPw && newPw.length >= 8 && (
+              <p className="text-xs text-emerald-600 font-medium mt-1.5">
+                ✓ Passwords match.
+              </p>
+            )}
+          </div>
+
+          {/* Password requirements */}
+
+          <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-4">
+            <p className="font-semibold text-slate-900 text-sm mb-2">
+              Password Requirements
+            </p>
+
+            <p className="text-xs text-slate-600 mb-3">
+              Use a strong password that includes all of the following:
+            </p>
+
+            <div className="space-y-1.5 text-xs">
+              {[
+                {
+                  rule: "At least 8 characters",
+                  met: newPw.length >= 8,
+                },
+                {
+                  rule: "At least one uppercase letter",
+                  met: /[A-Z]/.test(newPw),
+                },
+                {
+                  rule: "At least one number",
+                  met: /[0-9]/.test(newPw),
+                },
+                {
+                  rule: "At least one special character",
+                  met: /[^A-Za-z0-9]/.test(newPw),
+                },
+              ].map(({ rule, met }) => (
+                <p
+                  key={rule}
+                  className={
+                    met && newPw
+                      ? "text-emerald-700 font-medium"
+                      : "text-slate-700"
+                  }
+                >
+                  <span className="inline-block w-5">
+                    {met && newPw ? "✓" : "○"}
+                  </span>
+
+                  {rule}
+                </p>
+              ))}
+            </div>
+          </div>
+
+          <p className="text-xs text-slate-600">
+            After changing your password, a confirmation email will be sent
+            to <span className="font-semibold text-slate-900">{email}</span>.
+          </p>
+
+          {/* Change password button */}
+
+          <div className="flex justify-end pt-2">
+            <button
+              type="button"
+              onClick={changePassword}
+              disabled={pwSaving}
+              className="flex items-center gap-2 px-5 py-2.5 bg-[#7A1B0F] hover:opacity-90 text-white text-sm font-semibold rounded-xl transition shadow-sm shadow-[#7A1B0F]/20 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {pwSaving ? <Icons.Spinner /> : <Icons.Lock />}
+
+              {pwSaving
+                ? "Updating Password..."
+                : "Change Password"}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      {/* Session Information */}
+      {/* ─────────────────────────────────────────────────────────────────── */}
+
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm px-6 py-5">
+        <div className="mb-4">
+          <h3 className="font-semibold text-slate-900 text-sm">
+            Session Information
+          </h3>
+
+          <p className="text-xs text-slate-600 mt-1">
+            Basic information associated with your current account session.
+          </p>
+        </div>
+
+        <div className="space-y-3 text-sm">
+          {/* Signed in as */}
+
+          <div className="flex items-center justify-between gap-4 py-2 border-b border-slate-100">
+            <span className="text-slate-700 font-medium">
+              Signed in as
+            </span>
+
+            <span className="font-medium text-slate-900 text-right break-all">
+              {email || "—"}
+            </span>
+          </div>
+
+          {/* Role */}
+
+          <div className="flex items-center justify-between gap-4 py-2 border-b border-slate-100">
+            <span className="text-slate-700 font-medium">
+              Account Role
+            </span>
+
+            <span
+              className={`px-2.5 py-1 text-[11px] font-semibold rounded-full ${
+                ROLE_COLORS[role] ?? ROLE_COLORS.guest
+              }`}
+            >
+              {ROLE_LABELS[role] ?? role}
+            </span>
+          </div>
+
+          {/* User ID */}
+
+          <div className="flex items-center justify-between gap-4 py-2">
+            <span className="text-slate-700 font-medium">
+              User ID
+            </span>
+
+            <span className="font-mono text-xs text-slate-600 break-all text-right">
+              {user?.id ?? "—"}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      {/* Security note */}
+      {/* ─────────────────────────────────────────────────────────────────── */}
+
+      <div className="rounded-2xl border border-[#7A1B0F]/20 bg-[#7A1B0F]/5 px-5 py-4">
+        <p className="text-sm font-semibold text-[#7A1B0F]">
+          Keep your account secure
+        </p>
+
+        <p className="text-xs text-slate-700 mt-1 leading-5">
+          Never share your password with anyone. If you believe someone has
+          accessed your account without permission, change your password
+          immediately and contact an administrator.
+        </p>
+      </div>
+    </div>
   );
 }

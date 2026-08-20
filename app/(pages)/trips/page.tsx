@@ -1,8 +1,6 @@
-// room-booking/app/(pages)/trips/page.tsx
-
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
@@ -10,22 +8,32 @@ import { useRouter } from "next/navigation";
 import Navbar from "@/app/components/Navbar";
 import Footer from "@/app/components/Footer";
 
-interface RoomImage {
+interface ListingImage {
   url: string;
-  label: string;
+  label?: string;
+  caption?: string;
 }
 
-interface Room {
+interface Listing {
   _id: string;
-  name: string;
-  type: string;
-  pricePerNight: number;
-  images: RoomImage[];
+  name?: string;
+  title?: string;
+  description?: string;
+  rentalType?: "short_term" | "mid_term" | "long_term" | string;
+  type?: string;
+  pricePerNight?: number;
+  pricePerMonth?: number;
+  price?: number;
+  images?: ListingImage[] | string[];
+  bedrooms?: number | string;
 }
 
 interface Booking {
   _id: string;
-  room: Room;
+  room?: Listing;
+  unit?: Listing;
+  property?: Listing;
+  listing?: Listing;
   checkIn: string;
   checkOut: string;
   totalPrice: number;
@@ -33,25 +41,26 @@ interface Booking {
   createdAt: string;
 }
 
-const STATUS_STYLES = {
-  pending: "bg-yellow-100 text-yellow-700 border border-yellow-200",
-  confirmed: "bg-green-100 text-green-700 border border-green-200",
-  cancelled: "bg-red-100 text-red-700 border border-red-200",
+type BookingStatus = Booking["status"];
+type Tab = "all" | BookingStatus;
+
+const STATUS_STYLES: Record<BookingStatus, string> = {
+  pending:
+    "bg-yellow-100 text-yellow-700 border border-yellow-200",
+  confirmed:
+    "bg-green-100 text-green-700 border border-green-200",
+  cancelled:
+    "bg-red-100 text-red-700 border border-red-200",
 };
 
-const STATUS_ICONS = {
+const STATUS_ICONS: Record<BookingStatus, string> = {
   pending: "⏳",
-  confirmed: "✅",
-  cancelled: "❌",
+  confirmed: "✓",
+  cancelled: "✕",
 };
 
-const PLACEHOLDER_IMAGES: Record<string, string> = {
-  single: "https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=800",
-  double: "https://images.unsplash.com/photo-1618773928121-c32242e63f39?w=800",
-  suite: "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800",
-  family: "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800",
-  default: "https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=800",
-};
+const PLACEHOLDER_IMAGE =
+  "https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=1200";
 
 export default function TripsPage() {
   const { data: session, status } = useSession();
@@ -60,108 +69,267 @@ export default function TripsPage() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState<"all" | "pending" | "confirmed" | "cancelled">("all");
+  const [activeTab, setActiveTab] = useState<Tab>("all");
   const [cancellingId, setCancellingId] = useState<string | null>(null);
 
-  // Redirect if not logged in
+  // Redirect unauthenticated users
   useEffect(() => {
     if (status === "unauthenticated") {
-      router.push("/login");
+      router.replace("/login");
     }
   }, [status, router]);
 
-  // Fetch bookings
-  useEffect(() => {
-    const loadBookings = async () => {
-      if (!session?.user) return;
-      setLoading(true);
-      setError("");
-      try {
-        const userId = (session.user as { id?: string }).id;
-        const res = await fetch(`/api/bookings?userId=${userId}`);
-        const data = await res.json();
-        if (data.success) {
-          setBookings(data.data);
-        } else {
-          setError("Failed to load bookings.");
-        }
-      } catch {
-        setError("Something went wrong. Please try again.");
-      } finally {
-        setLoading(false);
-      }
-    };
+  // Load bookings
+  const loadBookings = async () => {
+    if (!session?.user) return;
 
-    if (session) loadBookings();
-  }, [session]);
+    setLoading(true);
+    setError("");
 
-  const handleCancel = async (bookingId: string) => {
-    if (!confirm("Are you sure you want to cancel this booking?")) return;
-
-    setCancellingId(bookingId);
     try {
-      const res = await fetch(`/api/bookings/${bookingId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "cancelled" }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setBookings((prev) =>
-          prev.map((b) =>
-            b._id === bookingId ? { ...b, status: "cancelled" } : b
-          )
-        );
+      const userId = (session.user as { id?: string }).id;
+
+      if (!userId) {
+        setError("Unable to identify your account.");
+        return;
       }
-    } catch {
-      alert("Failed to cancel booking. Please try again.");
+
+      const response = await fetch(
+        `/api/bookings?userId=${encodeURIComponent(userId)}`,
+        {
+          method: "GET",
+          cache: "no-store",
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch bookings.");
+      }
+
+      const data = await response.json();
+
+      if (data.success && Array.isArray(data.data)) {
+        setBookings(data.data);
+      } else {
+        setBookings([]);
+        setError(data.message || "Failed to load your bookings.");
+      }
+    } catch (err) {
+      console.error("Error loading bookings:", err);
+      setError("Something went wrong while loading your bookings.");
     } finally {
-      setCancellingId(null);
+      setLoading(false);
     }
   };
 
-  const getRoomImage = (room: Room): string => {
-    if (room.images && room.images.length > 0) {
-      const first = room.images[0];
-      if (typeof first === "object" && first.url) return first.url;
+  useEffect(() => {
+    if (status === "authenticated" && session) {
+      loadBookings();
     }
-    return PLACEHOLDER_IMAGES[room.type] ?? PLACEHOLDER_IMAGES["default"];
+  }, [status, session]);
+
+  // Get the listing associated with a booking.
+  // Supports both the newer property/unit structure
+  // and the older room-based booking structure.
+  const getListing = (booking: Booking): Listing | null => {
+    return (
+      booking.listing ||
+      booking.property ||
+      booking.unit ||
+      booking.room ||
+      null
+    );
+  };
+
+  const getListingName = (listing: Listing | null) => {
+    if (!listing) return "JluvStays Property";
+
+    return listing.name || listing.title || "JluvStays Property";
+  };
+
+  const getListingImage = (listing: Listing | null): string => {
+    if (!listing?.images || listing.images.length === 0) {
+      return PLACEHOLDER_IMAGE;
+    }
+
+    const firstImage = listing.images[0];
+
+    if (typeof firstImage === "string") {
+      return firstImage;
+    }
+
+    if (firstImage?.url) {
+      return firstImage.url;
+    }
+
+    return PLACEHOLDER_IMAGE;
+  };
+
+  const getListingType = (listing: Listing | null) => {
+    if (!listing) return "Accommodation";
+
+    if (listing.rentalType) {
+      switch (listing.rentalType) {
+        case "short_term":
+          return "Short-term stay";
+
+        case "mid_term":
+          return "Mid-term rental";
+
+        case "long_term":
+          return "Long-term rental";
+
+        default:
+          return listing.rentalType.replace(/_/g, " ");
+      }
+    }
+
+    if (listing.type) {
+      return listing.type.replace(/_/g, " ");
+    }
+
+    return "Accommodation";
   };
 
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString("en-KE", {
+    if (!dateStr) return "—";
+
+    const date = new Date(dateStr);
+
+    if (Number.isNaN(date.getTime())) {
+      return "—";
+    }
+
+    return date.toLocaleDateString("en-KE", {
       day: "numeric",
       month: "short",
       year: "numeric",
     });
   };
 
-  const calculateNights = (checkIn: string, checkOut: string) => {
-    const diff =
-      new Date(checkOut).getTime() - new Date(checkIn).getTime();
-    return Math.ceil(diff / (1000 * 60 * 60 * 24));
+  const calculateNights = (
+    checkIn: string,
+    checkOut: string
+  ) => {
+    const start = new Date(checkIn);
+    const end = new Date(checkOut);
+
+    const diff = end.getTime() - start.getTime();
+
+    if (diff <= 0) return 0;
+
+    return Math.ceil(
+      diff / (1000 * 60 * 60 * 24)
+    );
   };
 
-  const filteredBookings =
-    activeTab === "all"
-      ? bookings
-      : bookings.filter((b) => b.status === activeTab);
+  const isBookingPast = (checkOut: string) => {
+    const checkout = new Date(checkOut);
 
-  const counts = {
-    all: bookings.length,
-    pending: bookings.filter((b) => b.status === "pending").length,
-    confirmed: bookings.filter((b) => b.status === "confirmed").length,
-    cancelled: bookings.filter((b) => b.status === "cancelled").length,
+    return (
+      !Number.isNaN(checkout.getTime()) &&
+      checkout < new Date()
+    );
   };
 
-  // Show loading while checking auth
+  // Cancel booking
+  const handleCancel = async (bookingId: string) => {
+    const confirmed = window.confirm(
+      "Are you sure you want to cancel this booking?"
+    );
+
+    if (!confirmed) return;
+
+    setCancellingId(bookingId);
+
+    try {
+      const response = await fetch(
+        `/api/bookings/${bookingId}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            status: "cancelled",
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.message || "Failed to cancel booking."
+        );
+      }
+
+      setBookings((previous) =>
+        previous.map((booking) =>
+          booking._id === bookingId
+            ? {
+                ...booking,
+                status: "cancelled",
+              }
+            : booking
+        )
+      );
+    } catch (err) {
+      console.error("Cancel booking error:", err);
+
+      alert(
+        err instanceof Error
+          ? err.message
+          : "Failed to cancel booking. Please try again."
+      );
+    } finally {
+      setCancellingId(null);
+    }
+  };
+
+  const counts = useMemo(
+    () => ({
+      all: bookings.length,
+
+      pending: bookings.filter(
+        (booking) => booking.status === "pending"
+      ).length,
+
+      confirmed: bookings.filter(
+        (booking) => booking.status === "confirmed"
+      ).length,
+
+      cancelled: bookings.filter(
+        (booking) => booking.status === "cancelled"
+      ).length,
+    }),
+    [bookings]
+  );
+
+  const filteredBookings = useMemo(() => {
+    if (activeTab === "all") {
+      return bookings;
+    }
+
+    return bookings.filter(
+      (booking) => booking.status === activeTab
+    );
+  }, [bookings, activeTab]);
+
+  // Loading / authentication state
   if (status === "loading") {
     return (
       <div className="min-h-screen bg-gray-50">
         <Navbar />
-        <div className="max-w-4xl mx-auto px-4 py-20 text-center">
-          <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto" />
-        </div>
+
+        <main className="max-w-4xl mx-auto px-4 py-20 text-center">
+          <div className="w-9 h-9 border-4 border-gray-300 border-t-[#7A1B0F] rounded-full animate-spin mx-auto" />
+
+          <p className="mt-4 text-sm text-gray-500">
+            Loading your bookings...
+          </p>
+        </main>
+
         <Footer />
       </div>
     );
@@ -171,50 +339,77 @@ export default function TripsPage() {
     <div className="min-h-screen bg-gray-50">
       <Navbar />
 
-      {/* ── Page Header ── */}
-      <section className="bg-blue-600 py-14 px-4">
+      {/* Page Header */}
+      <section className="bg-[#7A1B0F] py-14 px-4">
         <div className="max-w-4xl mx-auto">
-          <h1 className="text-4xl font-bold text-white mb-2">My Bookings</h1>
-          <p className="text-blue-100">
-            Welcome back, {session?.user?.name?.split(" ")[0]} 👋 — here are
-            all your room bookings.
+          <p className="text-sm font-semibold text-white/80 mb-2">
+            JluvStays
+          </p>
+
+          <h1 className="text-4xl font-bold text-white mb-2">
+            My Bookings
+          </h1>
+
+          <p className="text-white/90">
+            Welcome back,{" "}
+            {session?.user?.name?.split(" ")[0] || "Guest"} 👋
+          </p>
+
+          <p className="text-sm text-white/70 mt-1">
+            View and manage your stays and rental bookings.
           </p>
         </div>
       </section>
 
-      <div className="max-w-4xl mx-auto px-4 py-10">
+      <main className="max-w-4xl mx-auto px-4 py-10">
 
-        {/* ── Tabs ── */}
-        <div className="flex gap-2 mb-8 bg-white rounded-xl p-1.5 shadow-sm border border-gray-100 w-fit">
-          {(["all", "pending", "confirmed", "cancelled"] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition capitalize ${
-                activeTab === tab
-                  ? "bg-blue-600 text-white shadow"
-                  : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              {tab === "all" ? "All" : tab.charAt(0).toUpperCase() + tab.slice(1)}
-              <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-xs ${
-                activeTab === tab ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-500"
-              }`}>
-                {counts[tab]}
-              </span>
-            </button>
-          ))}
+        {/* Tabs */}
+        <div className="flex flex-wrap gap-2 mb-8 bg-white rounded-xl p-1.5 shadow-sm border border-gray-100 w-fit">
+          {(
+            ["all", "pending", "confirmed", "cancelled"] as const
+          ).map((tab) => {
+            const active = activeTab === tab;
+
+            return (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveTab(tab)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                  active
+                    ? "bg-[#7A1B0F] text-white shadow"
+                    : "text-gray-500 hover:text-gray-900 hover:bg-gray-50"
+                }`}
+              >
+                {tab === "all"
+                  ? "All"
+                  : tab.charAt(0).toUpperCase() +
+                    tab.slice(1)}
+
+                <span
+                  className={`ml-1.5 px-1.5 py-0.5 rounded-full text-xs ${
+                    active
+                      ? "bg-white/20 text-white"
+                      : "bg-gray-100 text-gray-500"
+                  }`}
+                >
+                  {counts[tab]}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
-        {/* ── Loading State ── */}
+        {/* Loading State */}
         {loading && (
           <div className="space-y-4">
-            {[1, 2, 3].map((i) => (
+            {[1, 2, 3].map((item) => (
               <div
-                key={i}
+                key={item}
                 className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 animate-pulse flex gap-4"
               >
-                <div className="w-32 h-28 bg-gray-200 rounded-xl flex-shrink-0" />
+                <div className="w-32 h-28 bg-gray-200 rounded-xl shrink-0" />
+
                 <div className="flex-1 space-y-3">
                   <div className="h-5 bg-gray-200 rounded w-1/2" />
                   <div className="h-4 bg-gray-200 rounded w-1/3" />
@@ -226,156 +421,249 @@ export default function TripsPage() {
           </div>
         )}
 
-        {/* ── Error State ── */}
+        {/* Error State */}
         {!loading && error && (
-          <div className="text-center py-20">
-            <p className="text-5xl mb-4">⚠️</p>
-            <p className="text-red-500 text-lg mb-4">{error}</p>
+          <div className="bg-white rounded-2xl border border-red-100 p-10 text-center">
+            <div className="text-5xl mb-4">
+              ⚠️
+            </div>
+
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">
+              Unable to load bookings
+            </h2>
+
+            <p className="text-red-500 mb-6">
+              {error}
+            </p>
+
             <button
-              onClick={() => router.refresh()}
-              className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+              type="button"
+              onClick={loadBookings}
+              className="px-6 py-2.5 bg-[#7A1B0F] text-white rounded-lg hover:bg-[#64160C] transition"
             >
               Try Again
             </button>
           </div>
         )}
 
-        {/* ── Empty State ── */}
-        {!loading && !error && filteredBookings.length === 0 && (
-          <div className="text-center py-20">
-            <p className="text-6xl mb-4">🏠</p>
-            <h3 className="text-xl font-semibold text-gray-700 mb-2">
-              {activeTab === "all"
-                ? "No bookings yet"
-                : `No ${activeTab} bookings`}
-            </h3>
-            <p className="text-gray-500 mb-6">
-              {activeTab === "all"
-                ? "You haven't made any bookings yet. Browse our rooms to get started."
-                : `You don't have any ${activeTab} bookings.`}
-            </p>
-            {activeTab === "all" && (
-              <Link
-                href="/rooms"
-                className="inline-block px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition font-medium"
-              >
-                Browse Rooms
-              </Link>
-            )}
-          </div>
-        )}
+        {/* Empty State */}
+        {!loading &&
+          !error &&
+          filteredBookings.length === 0 && (
+            <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
+              <div className="text-6xl mb-5">
+                🏠
+              </div>
 
-        {/* ── Bookings List ── */}
-        {!loading && !error && filteredBookings.length > 0 && (
-          <div className="space-y-4">
-            {filteredBookings.map((booking) => {
-              const nights = calculateNights(booking.checkIn, booking.checkOut);
-              const isPast = new Date(booking.checkOut) < new Date();
-              const isCancellable =
-                booking.status === "pending" &&
-                new Date(booking.checkIn) > new Date();
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                {activeTab === "all"
+                  ? "No bookings yet"
+                  : `No ${activeTab} bookings`}
+              </h3>
 
-              return (
-                <div
-                  key={booking._id}
-                  className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition duration-300"
+              <p className="text-gray-500 mb-6 max-w-md mx-auto">
+                {activeTab === "all"
+                  ? "You haven't made any bookings yet. Explore JluvStays to find your next stay."
+                  : `You don't have any ${activeTab} bookings.`}
+              </p>
+
+              {activeTab === "all" && (
+                <Link
+                  href="/rooms"
+                  className="inline-flex items-center px-6 py-3 bg-[#7A1B0F] text-white rounded-xl hover:bg-[#64160C] transition font-medium"
                 >
-                  <div className="flex flex-col sm:flex-row">
+                  Explore Available Stays
+                </Link>
+              )}
+            </div>
+          )}
 
-                    {/* Room Image */}
-                    <div className="relative w-full sm:w-36 h-48 sm:h-auto shrink-0">
-                      <Image
-                        src={getRoomImage(booking.room)}
-                        alt={booking.room.name}
-                        fill
-                        sizes="144px"
-                        className="object-cover"
-                      />
-                      {isPast && (
-                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                          <span className="text-white text-xs font-semibold bg-black/50 px-2 py-1 rounded-full">
-                            Completed
+        {/* Bookings List */}
+        {!loading &&
+          !error &&
+          filteredBookings.length > 0 && (
+            <div className="space-y-4">
+              {filteredBookings.map((booking) => {
+                const listing = getListing(booking);
+
+                const listingName =
+                  getListingName(listing);
+
+                const image =
+                  getListingImage(listing);
+
+                const listingType =
+                  getListingType(listing);
+
+                const nights = calculateNights(
+                  booking.checkIn,
+                  booking.checkOut
+                );
+
+                const isPast = isBookingPast(
+                  booking.checkOut
+                );
+
+                const isCancellable =
+                  booking.status === "pending" &&
+                  new Date(booking.checkIn) >
+                    new Date();
+
+                return (
+                  <article
+                    key={booking._id}
+                    className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition duration-300"
+                  >
+                    <div className="flex flex-col sm:flex-row">
+
+                      {/* Property Image */}
+                      <div className="relative w-full sm:w-40 h-52 sm:h-auto shrink-0 bg-gray-100">
+                        <Image
+                          src={image}
+                          alt={listingName}
+                          fill
+                          sizes="160px"
+                          className="object-cover"
+                        />
+
+                        {isPast && (
+                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                            <span className="text-white text-xs font-semibold bg-black/60 px-3 py-1.5 rounded-full">
+                              Completed
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Booking Details */}
+                      <div className="flex-1 p-5">
+
+                        {/* Title / Status */}
+                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">
+                          <div>
+                            <h3 className="text-lg font-bold text-gray-900">
+                              {listingName}
+                            </h3>
+
+                            <p className="text-sm text-gray-500 capitalize mt-1">
+                              {listingType}
+                            </p>
+                          </div>
+
+                          <span
+                            className={`self-start px-3 py-1 text-xs font-semibold rounded-full ${STATUS_STYLES[booking.status]}`}
+                          >
+                            {STATUS_ICONS[booking.status]}{" "}
+                            {booking.status
+                              .charAt(0)
+                              .toUpperCase() +
+                              booking.status.slice(1)}
                           </span>
                         </div>
-                      )}
+
+                        {/* Dates */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+
+                          <div className="bg-gray-50 rounded-xl p-3 text-center">
+                            <p className="text-xs text-gray-400 mb-1">
+                              Check-in
+                            </p>
+
+                            <p className="text-sm font-semibold text-gray-800">
+                              {formatDate(
+                                booking.checkIn
+                              )}
+                            </p>
+                          </div>
+
+                          <div className="bg-[#D2CFCD]/30 rounded-xl p-3 text-center">
+                            <p className="text-xs text-gray-500 mb-1">
+                              Duration
+                            </p>
+
+                            <p className="text-sm font-semibold text-[#7A1B0F]">
+                              {nights > 0
+                                ? `${nights} night${
+                                    nights !== 1
+                                      ? "s"
+                                      : ""
+                                  }`
+                                : "—"}
+                            </p>
+                          </div>
+
+                          <div className="bg-gray-50 rounded-xl p-3 text-center">
+                            <p className="text-xs text-gray-400 mb-1">
+                              Check-out
+                            </p>
+
+                            <p className="text-sm font-semibold text-gray-800">
+                              {formatDate(
+                                booking.checkOut
+                              )}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Price / Actions */}
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+
+                          <div>
+                            <p className="text-xs text-gray-400">
+                              Total Price
+                            </p>
+
+                            <p className="text-lg font-bold text-[#7A1B0F]">
+                              Ksh{" "}
+                              {Number(
+                                booking.totalPrice || 0
+                              ).toLocaleString(
+                                "en-KE"
+                              )}
+                            </p>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2">
+
+                            {listing?._id && (
+                              <Link
+                                href={`/rooms/${listing._id}`}
+                                className="px-4 py-2 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-lg transition font-medium"
+                              >
+                                View Property
+                              </Link>
+                            )}
+
+                            {isCancellable && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleCancel(
+                                    booking._id
+                                  )
+                                }
+                                disabled={
+                                  cancellingId ===
+                                  booking._id
+                                }
+                                className="px-4 py-2 text-sm border border-red-300 text-red-500 hover:bg-red-50 rounded-lg transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {cancellingId ===
+                                booking._id
+                                  ? "Cancelling..."
+                                  : "Cancel"}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     </div>
-
-                    {/* Booking Info */}
-                    <div className="flex-1 p-5">
-                      <div className="flex items-start justify-between mb-3">
-                        <div>
-                          <h3 className="text-lg font-bold text-gray-900 mb-0.5">
-                            {booking.room.name}
-                          </h3>
-                          <p className="text-sm text-gray-500 capitalize">
-                            {booking.room.type} room
-                          </p>
-                        </div>
-                        {/* Status badge */}
-                        <span className={`px-3 py-1 text-xs font-semibold rounded-full ${STATUS_STYLES[booking.status]}`}>
-                          {STATUS_ICONS[booking.status]} {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
-                        </span>
-                      </div>
-
-                      {/* Dates */}
-                      <div className="grid grid-cols-3 gap-3 mb-4">
-                        <div className="bg-gray-50 rounded-xl p-3 text-center">
-                          <p className="text-xs text-gray-400 mb-1">Check-in</p>
-                          <p className="text-sm font-semibold text-gray-800">
-                            {formatDate(booking.checkIn)}
-                          </p>
-                        </div>
-                        <div className="bg-blue-50 rounded-xl p-3 text-center">
-                          <p className="text-xs text-gray-400 mb-1">Nights</p>
-                          <p className="text-sm font-semibold text-blue-600">
-                            {nights} night{nights !== 1 ? "s" : ""}
-                          </p>
-                        </div>
-                        <div className="bg-gray-50 rounded-xl p-3 text-center">
-                          <p className="text-xs text-gray-400 mb-1">Check-out</p>
-                          <p className="text-sm font-semibold text-gray-800">
-                            {formatDate(booking.checkOut)}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Price and Actions */}
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-xs text-gray-400">Total Price</p>
-                          <p className="text-lg font-bold text-blue-600">
-                            Ksh {booking.totalPrice.toLocaleString()}
-                          </p>
-                        </div>
-
-                        <div className="flex gap-2">
-                          <Link
-                            href={`/rooms/${booking.room._id}`}
-                            className="px-4 py-2 text-sm border border-gray-300 text-gray-600 hover:bg-gray-50 rounded-lg transition font-medium"
-                          >
-                            View Room
-                          </Link>
-                          {isCancellable && (
-                            <button
-                              onClick={() => handleCancel(booking._id)}
-                              disabled={cancellingId === booking._id}
-                              className="px-4 py-2 text-sm border border-red-300 text-red-500 hover:bg-red-50 rounded-lg transition font-medium disabled:opacity-50"
-                            >
-                              {cancellingId === booking._id
-                                ? "Cancelling..."
-                                : "Cancel"}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+      </main>
 
       <Footer />
     </div>

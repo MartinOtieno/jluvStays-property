@@ -19,7 +19,7 @@ const STATUS_STYLES = {
 };
 
 const formatDate = (d: string) =>
-  new Date(d).toLocaleDateString("en-KE", {
+  new Date(d).toLocaleDateString("en-US", {
     day: "numeric", month: "short", year: "numeric",
   });
 
@@ -109,13 +109,13 @@ export default function AdminViewingRequestsPage() {
             onClick={() => setActiveTab(tab)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition capitalize flex items-center gap-1.5 ${
               activeTab === tab
-                ? "bg-blue-600 text-white"
+                ? "bg-[#7A1B0F] text-white"
                 : "text-slate-500 hover:text-slate-700"
             }`}
           >
             {tab}
             <span className={`px-1.5 py-0.5 rounded-full text-xs ${
-              activeTab === tab ? "bg-blue-500 text-white" : "bg-slate-100 text-slate-500"
+              activeTab === tab ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"
             }`}>
               {counts[tab]}
             </span>

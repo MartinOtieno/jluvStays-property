@@ -26,6 +26,9 @@ interface MessagesResponse {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+// Per-status colors — kept distinct (unread=blue, read=slate,
+// resolved=emerald) since they differentiate message states from each
+// other, not brand identity. Left unchanged from the original.
 const STATUS_CONFIG: Record<MessageStatus, { label: string; classes: string; dot: string }> = {
   unread:   { label: "Unread",   classes: "bg-blue-50  text-blue-700  border-blue-200",   dot: "bg-blue-500"   },
   read:     { label: "Read",     classes: "bg-slate-50 text-slate-600 border-slate-200",  dot: "bg-slate-400"  },
@@ -41,11 +44,11 @@ function timeAgo(dateStr: string): string {
   if (mins  < 60) return `${mins}m ago`;
   if (hours < 24) return `${hours}h ago`;
   if (days  < 7)  return `${days}d ago`;
-  return new Date(dateStr).toLocaleDateString("en-KE", { day: "numeric", month: "short" });
+  return new Date(dateStr).toLocaleDateString("en-US", { day: "numeric", month: "short" });
 }
 
 function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleString("en-KE", {
+  return new Date(dateStr).toLocaleString("en-US", {
     weekday: "short", day: "numeric", month: "short",
     year: "numeric", hour: "2-digit", minute: "2-digit",
   });
@@ -122,7 +125,7 @@ function MessagePanel({
         {/* Contact info */}
         <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex flex-wrap gap-4">
           <a href={`mailto:${msg.email}`}
-             className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium transition-colors">
+             className="flex items-center gap-2 text-sm text-[#7A1B0F] hover:opacity-80 font-medium transition-colors">
             <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
             </svg>
@@ -130,7 +133,7 @@ function MessagePanel({
           </a>
           {msg.phone && (
             <a href={`tel:${msg.phone}`}
-               className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium transition-colors">
+               className="flex items-center gap-2 text-sm text-[#7A1B0F] hover:opacity-80 font-medium transition-colors">
               <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
               </svg>
@@ -164,7 +167,7 @@ function MessagePanel({
 
           <a
             href={`mailto:${msg.email}?subject=Re: your message`}
-            className="ml-auto flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-[#1a3c6b] hover:bg-[#15325a] text-white transition-colors"
+            className="ml-auto flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-[#7A1B0F] hover:opacity-90 text-white transition-colors"
           >
             <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
               <path d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
@@ -179,7 +182,7 @@ function MessagePanel({
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
-export default function StaffContactMessages() {
+export default function AdminContactMessages() {
   const { data: session, status } = useSession();
   const router = useRouter();
 
@@ -276,13 +279,13 @@ export default function StaffContactMessages() {
     <div className="min-h-screen bg-[#f8f9fb]">
 
       {/* ── Page header ──────────────────────────────────────────────────── */}
-      <div className="bg-[#1a3c6b] px-6 py-8">
+      <div className="bg-[#7A1B0F] px-6 py-8">
         <div className="max-w-5xl mx-auto">
-          <p className="text-[#7eb3f5] text-xs font-semibold tracking-widest uppercase mb-1">
-            Staff Dashboard
+          <p className="text-white/60 text-xs font-semibold tracking-widest uppercase mb-1">
+           Admin Dashboard
           </p>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white">Contact Messages</h1>
-          <p className="text-[#b8d0f0] text-sm mt-1">
+          <p className="text-white/80 text-sm mt-1">
             View and respond to enquiries submitted through the contact form.
           </p>
         </div>
@@ -299,17 +302,19 @@ export default function StaffContactMessages() {
               <button
                 key={key}
                 onClick={() => setFilter(key)}
-                className={`rounded-2xl border p-4 text-left transition-all focus:outline-none focus:ring-2 focus:ring-blue-300
+                className={`rounded-2xl border p-4 text-left transition-all focus:outline-none focus:ring-2 focus:ring-[#7A1B0F]/30
                   ${active
-                    ? "bg-[#1a3c6b] border-[#1a3c6b] text-white shadow-md"
+                    ? "bg-[#7A1B0F] border-[#7A1B0F] text-white shadow-md"
                     : "bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm"}`}
               >
                 <p className={`text-2xl font-extrabold ${active ? "text-white" : "text-slate-900"}`}>
                   {loading ? "–" : counts[key]}
                 </p>
-                <p className={`text-xs font-semibold mt-0.5 ${active ? "text-blue-200" : "text-slate-400"}`}>
+                <p className={`text-xs font-semibold mt-0.5 ${active ? "text-white/70" : "text-slate-400"}`}>
                   {labels[key]}
                 </p>
+                {/* Unread indicator dot kept blue — matches StatusBadge's
+                    own unread color, a state signal rather than brand chrome. */}
                 {key === "unread" && counts.unread > 0 && !active && (
                   <span className="mt-1.5 inline-block w-2 h-2 rounded-full bg-blue-500" />
                 )}
@@ -331,7 +336,7 @@ export default function StaffContactMessages() {
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm text-slate-900 bg-white border-2 border-slate-200 placeholder:text-slate-400
-                         focus:outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-100 transition"
+                         focus:outline-none focus:border-[#7A1B0F] focus:ring-4 focus:ring-[#7A1B0F]/10 transition"
             />
           </div>
           <button
@@ -396,10 +401,12 @@ export default function StaffContactMessages() {
                   className={`group flex items-start gap-4 px-5 py-4 cursor-pointer transition-colors
                     hover:bg-slate-50 ${msg.status === "unread" ? "bg-blue-50/40" : ""}`}
                 >
-                  {/* Avatar */}
+                  {/* Avatar — kept blue for unread, matching StatusBadge's
+                      unread color (a state signal), read state falls back
+                      to neutral slate. */}
                   <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0 mt-0.5
                     ${msg.status === "unread"
-                      ? "bg-[#1a3c6b] text-white"
+                      ? "bg-blue-600 text-white"
                       : "bg-slate-100 text-slate-500"}`}>
                     {msg.name.charAt(0).toUpperCase()}
                   </div>
