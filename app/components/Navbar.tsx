@@ -412,7 +412,7 @@ export default function Navbar() {
             ) : (
               <>
                 <Link href="/login"    className="px-4 py-2 text-sm text-gray-700 hover:text-[#7A1B0F] font-medium transition">Sign In</Link>
-                <Link href="/register" className="px-4 py-2 text-sm bg-[#7A1B0F] hover:opacity-90 text-white font-medium rounded-lg transition">My Account</Link>
+                <Link href="/register" className="px-4 py-2 text-sm bg-[#7A1B0F] hover:opacity-90 text-white font-medium rounded-lg transition">Create Account</Link>
               </>
             )}
           </div>
@@ -517,7 +517,7 @@ export default function Navbar() {
             ) : (
               <div className="pt-2 border-t border-gray-100 space-y-2">
                 <Link href="/login"    onClick={() => setMenuOpen(false)} className="block text-gray-600 hover:text-[#7A1B0F] py-2.5 px-2 font-medium rounded-lg hover:bg-gray-50 transition">Sign In</Link>
-                <Link href="/register" onClick={() => setMenuOpen(false)} className="block py-2.5 px-4 bg-[#7A1B0F] text-white rounded-lg font-medium text-center hover:opacity-90 transition">My Account</Link>
+                <Link href="/register" onClick={() => setMenuOpen(false)} className="block py-2.5 px-4 bg-[#7A1B0F] text-white rounded-lg font-medium text-center hover:opacity-90 transition">Create Account</Link>
               </div>
             )}
           </div>

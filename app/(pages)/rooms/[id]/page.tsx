@@ -8,6 +8,7 @@ import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Navbar from "@/app/components/Navbar";
 import Footer from "@/app/components/Footer";
+import GalleryLightbox from "@/app/components/GalleryLightbox";
 
 interface Room {
   _id: string;
@@ -35,6 +36,7 @@ function RoomDetailContent() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [activeImage, setActiveImage] = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   const [moveIn, setMoveIn] = useState(searchParams.get("moveIn") ?? "");
   const [moveOut, setMoveOut] = useState(searchParams.get("moveOut") ?? "");
@@ -159,6 +161,7 @@ function RoomDetailContent() {
   }
 
   const images = room.images.length > 0 ? room.images : [];
+  const galleryPhotos = images.map((url) => ({ url, caption: room.label || "Room photo" }));
   const unitInfo = typeof room.unit === "string" ? null : room.unit;
 
   return (
@@ -169,17 +172,40 @@ function RoomDetailContent() {
         {/* ── Gallery ── */}
         {images.length > 0 ? (
           <div className="mb-8">
-            <div className="relative h-96 rounded-2xl overflow-hidden bg-gray-100">
-              <Image src={images[activeImage]} alt={room.label || "Room photo"} fill sizes="100vw" className="object-cover" />
-            </div>
+            <button
+              type="button"
+              onClick={() => setLightboxOpen(true)}
+              className="relative w-full h-96 rounded-3xl overflow-hidden bg-gray-100 shadow-sm group block cursor-zoom-in"
+            >
+              <Image
+                src={images[activeImage]}
+                alt={room.label || "Room photo"}
+                fill
+                sizes="100vw"
+                className="object-cover transition-transform duration-500 ease-out group-hover:scale-105"
+              />
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors duration-300 flex items-center justify-center">
+                <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-300 text-white font-semibold text-sm flex items-center gap-2 bg-black/40 backdrop-blur-sm px-4 py-2 rounded-full">
+                  🔍 View gallery
+                </span>
+              </div>
+              {images.length > 1 && (
+                <span className="absolute bottom-3 right-3 px-3 py-1 bg-black/50 backdrop-blur-sm text-white text-xs font-medium rounded-full">
+                  📷 {images.length} photo{images.length !== 1 ? "s" : ""}
+                </span>
+              )}
+            </button>
+
             {images.length > 1 && (
-              <div className="flex gap-2 mt-3 overflow-x-auto">
+              <div className="flex gap-2.5 mt-3 overflow-x-auto pb-1">
                 {images.map((url, i) => (
                   <button
                     key={url + i}
                     onClick={() => setActiveImage(i)}
-                    className={`relative w-20 h-20 flex-shrink-0 rounded-xl overflow-hidden border-2 transition ${
-                      i === activeImage ? "border-[#7A1B0F]" : "border-transparent"
+                    className={`relative w-20 h-20 flex-shrink-0 rounded-xl overflow-hidden border-2 transition-all duration-200 ${
+                      i === activeImage
+                        ? "border-[#7A1B0F] scale-105 shadow-md"
+                        : "border-transparent opacity-70 hover:opacity-100 hover:scale-105"
                     }`}
                   >
                     <Image src={url} alt="" fill sizes="80px" className="object-cover" />
@@ -187,9 +213,17 @@ function RoomDetailContent() {
                 ))}
               </div>
             )}
+
+            <GalleryLightbox
+              photos={galleryPhotos}
+              showGrid={false}
+              open={lightboxOpen}
+              startIndex={activeImage}
+              onClose={() => setLightboxOpen(false)}
+            />
           </div>
         ) : (
-          <div className="mb-8 h-64 rounded-2xl bg-gray-100 flex items-center justify-center text-5xl">🏠</div>
+          <div className="mb-8 h-64 rounded-3xl bg-gray-100 flex items-center justify-center text-5xl">🏠</div>
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
@@ -222,7 +256,10 @@ function RoomDetailContent() {
                 </h3>
                 <div className="flex flex-wrap gap-2">
                   {unitInfo.amenities.map((a) => (
-                    <span key={a} className="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm rounded-lg">
+                    <span
+                      key={a}
+                      className="px-3 py-1.5 bg-gray-100 hover:bg-[#7A1B0F]/10 hover:text-[#7A1B0F] text-gray-700 text-sm rounded-lg transition-colors duration-200"
+                    >
                       ✓ {a}
                     </span>
                   ))}
@@ -239,7 +276,7 @@ function RoomDetailContent() {
 
           {/* ── Booking Widget ── */}
           <div>
-            <div className="sticky top-24 border border-gray-200 rounded-2xl p-6 shadow-sm">
+            <div className="sticky top-24 border border-gray-200 rounded-2xl p-6 shadow-md">
               <p className="text-2xl font-bold text-[#7A1B0F] mb-1">
                 ${room.pricePerNight.toLocaleString()}
                 <span className="text-gray-400 text-base font-normal">/night</span>
@@ -252,7 +289,7 @@ function RoomDetailContent() {
                     type="date"
                     value={moveIn}
                     onChange={(e) => setMoveIn(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#7A1B0F]"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#7A1B0F] transition"
                   />
                 </div>
                 <div>
@@ -261,7 +298,7 @@ function RoomDetailContent() {
                     type="date"
                     value={moveOut}
                     onChange={(e) => setMoveOut(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#7A1B0F]"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#7A1B0F] transition"
                   />
                 </div>
               </div>
@@ -278,7 +315,7 @@ function RoomDetailContent() {
               <button
                 onClick={handleBook}
                 disabled={submitting || room.status !== "active"}
-                className="w-full mt-4 py-3 bg-[#7A1B0F] hover:opacity-90 disabled:opacity-50 text-white font-semibold rounded-xl transition"
+                className="w-full mt-4 py-3 bg-[#7A1B0F] hover:opacity-90 disabled:opacity-50 text-white font-semibold rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-[#7A1B0F]/20"
               >
                 {submitting ? "Booking..." : "Book Now"}
               </button>
